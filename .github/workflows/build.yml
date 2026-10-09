@@ -36,15 +36,11 @@ jobs:
       - name: Surface build errors as annotations
         if: failure()
         run: |
-          grep -niE "e: |error:|FAILURE:|Caused by|What went wrong|Unresolved|cannot find symbol|\\.java:|AAPT|resource|Could not" /tmp/build.log | tail -12 > /tmp/err.txt || true
+          echo "===== compile errors ====="
+          grep -nE "error:|\\.java:[0-9]+:|^\\* What went wrong:|> Task .*FAILED|Caused by:" /tmp/build.log | head -25 > /tmp/err.txt || true
+          echo "----- context after 'What went wrong' -----"
+          awk '/\* What went wrong:/{f=1} f{print; n++} n>12{exit}' /tmp/build.log >> /tmp/err.txt || true
           while IFS= read -r line; do
-            clean=$(printf '%s' "$line" | tr -d '\r' | cut -c1-500)
-            echo "::error::${clean}"
+            clean=$(printf '%s' "$line" | tr -d '\r' | cut -c1-480)
+            [ -n "$clean" ] && echo "::error::${clean}"
           done < /tmp/err.txt
-
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: TypeG-Smart-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
-          if-no-files-found: error
