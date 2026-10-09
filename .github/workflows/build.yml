@@ -44,3 +44,10 @@ jobs:
             clean=$(printf '%s' "$line" | tr -d '\r' | cut -c1-480)
             [ -n "$clean" ] && echo "::error::${clean}"
           done < /tmp/err.txt
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: TypeG-Smart-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
