@@ -4,6 +4,9 @@ on:
   push:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -45,9 +48,22 @@ jobs:
             [ -n "$clean" ] && echo "::error::${clean}"
           done < /tmp/err.txt
 
-      - name: Upload APK
+      - name: Rename APK
+        run: |
+          mkdir -p dist
+          cp app/build/outputs/apk/debug/app-debug.apk dist/TypeG-Smart.apk
+
+      - name: Upload APK (artifact)
         uses: actions/upload-artifact@v4
         with:
           name: TypeG-Smart-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
+          path: dist/TypeG-Smart.apk
           if-no-files-found: error
+
+      - name: Publish APK to Releases (one direct link)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: أحدث نسخة - Type-G Smart
+          body: "اضغط TypeG-Smart.apk تحت للتحميل المباشر."
+          files: dist/TypeG-Smart.apk
