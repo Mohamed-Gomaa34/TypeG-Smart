@@ -29,7 +29,18 @@ jobs:
           gradle-version: '8.10.2'
 
       - name: Build debug APK
-        run: gradle assembleDebug --no-daemon --stacktrace
+        run: |
+          set -o pipefail
+          gradle assembleDebug --no-daemon --stacktrace --console=plain 2>&1 | tee /tmp/build.log
+
+      - name: Surface build errors as annotations
+        if: failure()
+        run: |
+          grep -niE "e: |error:|FAILURE:|Caused by|What went wrong|Unresolved|cannot find symbol|\\.java:|AAPT|resource|Could not" /tmp/build.log | tail -12 > /tmp/err.txt || true
+          while IFS= read -r line; do
+            clean=$(printf '%s' "$line" | tr -d '\r' | cut -c1-500)
+            echo "::error::${clean}"
+          done < /tmp/err.txt
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
