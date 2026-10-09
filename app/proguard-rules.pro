@@ -1,0 +1,1 @@
+-keepclassmembers class com.typegsmart.aio.TypeGBridge { public *; }
