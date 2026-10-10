@@ -41,6 +41,9 @@ public class ControlEngine implements StripConnection.Listener {
     private final Map<String, JSONObject> devices = new ConcurrentHashMap<>();
     // توقيت آخر عينة لكل مخرج (mac|ch) لحساب الطاقة
     private final Map<String, Long> lastSampleMs = new ConcurrentHashMap<>();
+    // وقت اتصال كل مشترك — نتجاهل القراءات أول SETTLE_MS (الجهاز بيرجّع أصفار)
+    private final Map<String, Long> connectedAt = new ConcurrentHashMap<>();
+    private static final long SETTLE_MS = 10000;
     // المؤقتات الجارية (mac|ch) -> مهمة مجدولة
     private final Map<String, ScheduledFuture<?>> timers = new ConcurrentHashMap<>();
 
@@ -107,6 +110,7 @@ public class ControlEngine implements StripConnection.Listener {
             String label = boot.group(4);
             conn.mac = mac; conn.label = label;
             conns.put(mac, conn);
+            connectedAt.put(mac, System.currentTimeMillis());
             JSONObject d = devices.get(mac);
             if (d == null) d = newDevice(mac, name);
             try { d.put("online", true); d.put("name", d.optString("name", name)); } catch (Exception ignore) {}
@@ -117,9 +121,9 @@ public class ControlEngine implements StripConnection.Listener {
         }
         Matcher on = Protocol.onoff(line);
         if (on.matches()) {
-            int ch = Integer.parseInt(on.group(1));
+            int fw = Integer.parseInt(on.group(1));
             boolean state = "on".equals(on.group(2));
-            if (conn.mac != null) applyState(conn.mac, ch, state);
+            if (conn.mac != null) applyState(conn.mac, Protocol.physicalChannel(fw), state); // فريموير → فعلي
             return;
         }
         // رد المعلومات/القراءات: up:getinfo:<ch>:<..>:...  (الواط + الحالة لكل مخرج)
@@ -138,19 +142,31 @@ public class ControlEngine implements StripConnection.Listener {
         long now = System.currentTimeMillis();
         double tariff = prefs.getObj("tariff").optDouble("rate", 0); // جنيه لكل kWh
         String day = DAY.format(new Date(now));
+        // تجاهل أول SETTLE_MS بعد الاتصال (الجهاز بيرجّع أصفار)
+        Long conn = connectedAt.get(mac);
+        boolean settled = conn == null || (now - conn) > SETTLE_MS;
 
         for (Protocol.Reading r : rs) {
+            int phys = Protocol.physicalChannel(r.channel);   // فريموير → فعلي
             for (int i = 0; i < outs.length(); i++) {
                 JSONObject o = outs.optJSONObject(i);
-                if (o == null || o.optInt("channel") != r.channel) continue;
+                if (o == null || o.optInt("channel") != phys) continue;
                 try {
                     o.put("state", r.on ? "on" : "off");
                     o.put("watts", r.watts);
                     o.put("pending", false);
+                    // الحقول الخام الـ12 — عشان نحدّد الفولت/الواط بدقة من جهاز فعلي بدل التخمين
+                    if (r.fields != null) {
+                        JSONArray raw = new JSONArray();
+                        for (String f : r.fields) raw.put(f);
+                        o.put("raw", raw);
+                    }
                 } catch (Exception ignore) {}
 
+                if (!settled) continue;   // متسجّلش طاقة في فترة الاستقرار
+
                 // تكامل الطاقة: فقط لو الفرق الزمني أقل من 30 ثانية (زي الأصل)
-                String key = mac + "|" + r.channel;
+                String key = mac + "|" + phys;
                 Long prev = lastSampleMs.get(key);
                 if (prev != null) {
                     long dt = now - prev;
@@ -161,7 +177,7 @@ public class ControlEngine implements StripConnection.Listener {
                             o.put("wh", o.optDouble("wh", 0) + whDelta);
                             o.put("cost", o.optDouble("cost", 0) + costDelta);
                         } catch (Exception ignore) {}
-                        energy.addSample(mac, r.channel, r.watts, whDelta);
+                        energy.addSample(mac, phys, r.watts, whDelta);
                         energy.addCost(day, mac, whDelta, costDelta);
                     }
                 }
@@ -212,6 +228,24 @@ public class ControlEngine implements StripConnection.Listener {
         eachOutlet(mac, ch, o -> o.remove("timer"));
         saveDevices();
     }
+    /** تعديل بيانات مخرج (اسم/غرفة/نوع/محمي) في الحالة الحيّة. */
+    public void updateOutletMeta(String mac, int ch, JSONObject fields) {
+        eachOutlet(mac, ch, o -> {
+            try {
+                if (fields.has("name")) o.put("name", fields.optString("name"));
+                if (fields.has("room")) o.put("room", fields.optString("room"));
+                if (fields.has("type")) o.put("type", fields.optString("type"));
+                if (fields.has("protected")) o.put("protected", fields.optBoolean("protected"));
+            } catch (Exception ignore) {}
+        });
+        saveDevices();
+    }
+
+    public void setStripName(String mac, String name) {
+        JSONObject d = devices.get(mac);
+        if (d != null) { try { d.put("name", name); } catch (Exception ignore) {} saveDevices(); }
+    }
+
     private interface OutletFn { void apply(JSONObject o); }
     private void eachOutlet(String mac, int ch, OutletFn fn) {
         JSONObject d = devices.get(mac);
@@ -233,12 +267,26 @@ public class ControlEngine implements StripConnection.Listener {
     }
 
     // ===== أوامر صادرة =====
+    /** ch = المخرج الفعلي (1..4). */
     public boolean setOutlet(String mac, int ch, boolean on) {
+        if (!on && isProtected(mac, ch)) return false;   // مخرج محمي لا يُفصَل
         StripConnection c = conns.get(mac);
         if (c == null || !c.isOpen()) return false;
         setPending(mac, ch, true);
-        c.send(Protocol.onoff(ch, on));
+        c.send(Protocol.onoff(Protocol.fwChannel(ch), on));   // فعلي → فريموير
         return true;
+    }
+
+    public boolean isProtected(String mac, int ch) {
+        JSONObject d = devices.get(mac);
+        if (d == null) return false;
+        JSONArray outs = d.optJSONArray("outlets");
+        if (outs == null) return false;
+        for (int i = 0; i < outs.length(); i++) {
+            JSONObject o = outs.optJSONObject(i);
+            if (o != null && o.optInt("channel") == ch) return o.optBoolean("protected", false);
+        }
+        return false;
     }
 
     public void refresh(String mac) {

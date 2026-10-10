@@ -1,115 +1,373 @@
+/* Type-G Smart — واجهة التحكم (vanilla, offline). */
 'use strict';
-var themePreview=null;
-let S={},tab='home',selected='',step=1,setup=false,home={ssid:'',password:'',ip:'',ap:''},previous={},historyData=null;
-const $=id=>document.getElementById(id),ar=()=>S.lang!=='en',t=(a,e)=>ar()?a:e,esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-function api(action,b={}){try{const r=JSON.parse(window.TypeG.call(action,JSON.stringify(b)));if(r.error)throw Error(r.error);return r}catch(e){toast(errorText(e.message));return null}}
-function errorText(k){const d={TERMS_REQUIRED:t('وافق على شروط الاستخدام للمتابعة','Accept the terms to continue'),BAD_MEMBERS:t('حدد من جهاز إلى ٣ أجهزة بأسماء وأنواع صحيحة','Choose 1–3 devices with valid names and types'),BAD_NAME:t('اكتب اسمًا من حرف إلى ٤٠ حرفًا','Enter a name of 1–40 characters'),DEVICE_TYPE_REQUIRED:t('حدد نوع الجهاز المتوصل بالمخرج قبل تشغيله','Choose the connected device type before turning on'),HAPTIC_DISABLED:t('فعّل الاهتزاز من الإعدادات الأول','Enable haptics in Settings first'),NO_VIBRATOR:t('لم نقدر نوصل لمحرك الاهتزاز','Vibration hardware unavailable'),ENABLE_FIRST:t('فعّل التحكم في الجهاز الأول','Enable device control first'),OFFLINE:t('المشترك غير متصل','Strip is offline'),PENDING:t('في انتظار تأكيد الأمر السابق','Waiting for previous command'),BAD_VALUE:t('راجع الأرقام اللي دخلتها','Check the entered values'),BAD_AP:t('اكتب اسم شبكة TONLY_TAP كامل','Enter the full TONLY_TAP network name'),BAD_WIFI:t('راجع اسم الشبكة وكلمة السر؛ النقطتين غير مدعومتين','Check Wi-Fi credentials; colon is unsupported'),WIFI_REQUIRED:t('اتصل بواي فاي البيت واكتب عنوان الموبايل','Connect to home Wi-Fi and enter phone IP'),START_FIRST:t('شغّل خدمة التحكم الأول','Start controller first')};return d[k]||k}
-let toastTimer;function toast(s){$('toast').textContent=s;$('toast').style.display='block';clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').style.display='none',4500)}
-function button(text,action,data={},cls=''){return `<button class="${cls}" data-action="${action}" ${Object.entries(data).map(([k,v])=>`data-${k}="${esc(v)}"`).join(' ')}>${text}</button>`}
-function field(id,label,value='',type='text',extra=''){return `<label for="${id}">${label}</label><input id="${id}" type="${type}" value="${esc(value)}" ${extra}>`}
-function select(id,label,items){return `<label for="${id}">${label}</label><select id="${id}">${items.map(([v,n])=>`<option value="${v}">${n}</option>`).join('')}</select>`}
-function dev(){return (S.devices||[]).find(d=>d.mac===selected)||(S.devices||[])[0]}
-function payload(b={}){return {device:dev()?.mac,...b}}
-// Keep the page at its original position while only the dialog scrolls.
-let pageScrollLock=null;
-function lockPageScroll(){if(pageScrollLock)return;const body=document.body,root=document.documentElement;const keys=['position','top','left','right','width','overflow'];pageScrollLock={x:window.scrollX,y:window.scrollY,body:Object.fromEntries(keys.map(k=>[k,body.style[k]])),rootOverflow:root.style.overflow};root.style.overflow='hidden';Object.assign(body.style,{position:'fixed',top:`-${pageScrollLock.y}px`,left:`-${pageScrollLock.x}px`,right:'0',width:'100%',overflow:'hidden'});}
-function unlockPageScroll(){if(!pageScrollLock)return;const saved=pageScrollLock;pageScrollLock=null;Object.assign(document.body.style,saved.body);document.documentElement.style.overflow=saved.rootOverflow;window.scrollTo(saved.x,saved.y);}
-function closeModal(){if($('sheet').open)$('sheet').close();unlockPageScroll();}
-function modal(html){$('modal').innerHTML=html+button(t('رجوع','Back'),'close',{},'quiet wide');if(!$('sheet').open){lockPageScroll();try{$('sheet').showModal();$('sheet').scrollTop=0;}catch(e){unlockPageScroll();throw e;}}}
-$('sheet').addEventListener('close',()=>{if(!$('sheet').open)unlockPageScroll();});
-$('sheet').addEventListener('cancel',e=>{e.preventDefault();closeModal();});
-for(const event of ['wheel','touchmove'])document.addEventListener(event,e=>{if($('sheet').open&&!$('sheet').contains(e.target))e.preventDefault();},{passive:false});
-function refresh(render=true,passive=false){const next=api('state');if(!next)return;S=next;document.documentElement.lang=ar()?'ar':'en';document.documentElement.dir=ar()?'rtl':'ltr';document.body.classList.toggle('no-motion',S.motion===false);$('subtitle').textContent=t('كل أدوات التحكم والإعدادات في مكان واحد','All your controls and settings in one place');$('language').textContent=ar()?'EN':'عربي';if(typeof applyTheme==='function')applyTheme(themePreview||S);const footer=$('credits');if(footer)footer.textContent=t('فكرة وتطوير George emad · الإصدار 1.2.1','Concept & development by George emad · 1.2.1');if(render&&!$('sheet').open){if(passive&&$('termsScroll')&&!S.terms?.accepted)return;if(passive&&S.license?.active&&!setup&&!['home','devices'].includes(tab))return;if(typeof patchLive==='function'&&patchLive()){}else draw()}}
-const icons=['M3 11 12 3l9 8v10H3Z M9 21v-8h6v8','M5 3h14v18H5Z M8 8h8 M8 12h8 M8 16h8','M13 2 4 14h7l-1 8 10-13h-8Z','M3 20V4 M3 20h18 M6 16l4-5 4 2 6-8','M5 6h14 M5 12h14 M5 18h14 M9 3v6 M15 9v6 M9 15v6'];
-function draw(){if(!S.terms?.accepted){if(typeof drawTerms==='function')drawTerms();else $('main').innerHTML='';return}const tabs=[['home',t('الرئيسية','Home')],['devices',t('الأجهزة','Devices')],['auto',t('الأتمتة','Automate')],['energy',t('الطاقة','Energy')],['more',t('الإعدادات','Settings')]];$('nav').innerHTML=tabs.map(([k,n],i)=>button(`<svg viewBox="0 0 24 24"><path d="${icons[i]}"/></svg>${n}`,'tab',{tab:k},tab===k&&!setup?'selected':'')).join('');if(setup){drawSetup();return}const d=dev();if(d)selected=d.mac;let h='';if(tab==='home'){const total=(S.devices||[]).flatMap(x=>x.online?x.outlets:[]).reduce((s,o)=>s+(o.watts||0),0);h=`<h1>${t('أهلاً بيك في البيت','Welcome home')}</h1><p class="muted">${t('تحكم محلي من الموبايل مباشرة','Local control, directly from your phone')}</p><section class="card hero"><div class="row"><span>${t('الاستهلاك دلوقتي','Live power')}</span><span class="tag">${S.running?t('الخدمة شغالة','Controller active'):t('الخدمة متوقفة','Controller stopped')}</span></div><p><b>${total.toFixed(2)}</b> W</p><small>${(S.devices||[]).filter(x=>x.online).length} ${t('جهاز متصل','devices online')}</small></section>`;if(d)h+=deviceView(d);else h+=`<div class="card"><h2>${t('نبدأ بخطوات بسيطة','Let’s get connected')}</h2><p>${t('وصل الموبايل بواي فاي البيت، وبعدها معالج الإعداد هيمشي معاك خطوة بخطوة.','Connect your phone to home Wi-Fi, then follow the guided setup.')}</p></div>`;h+=`<div class="card"><h3>${t('كل المشتركات المسجلة','All registered strips')}</h3><div class="row">${button(t('تشغيل الكل','All on'),'globalControl',{state:'on'})}${button(t('فصل الكل','All off'),'globalControl',{state:'off'},'danger')}</div></div>`}
-if(tab==='devices'){h=`<h1>${t('أجهزتك','Your devices')}</h1>`;for(const item of S.devices||[])h+=`<div class="card"><div class="row"><h2>${esc(item.name)}</h2><span class="${item.online?'online':'offline'}">${item.online?t('متصل','Online'):t('غير متصل','Offline')}</span></div><small class="code">${item.mac}</small>${button(t('فتح التحكم','Open controls'),'choose',{mac:item.mac},'wide')}</div>`;if(d)h+=deviceView(d)}
-if(tab==='auto'){h=`<h1>${t('بيتك على مزاجك','Make it automatic')}</h1><p class="muted">${t('المؤقتات والقواعد محتاجة خدمة التطبيق شغالة واتصال واي فاي مستمر.','Timers and rules need the controller running and continuous Wi-Fi.')}</p>`;if(d){h+=chooser()+button(t('إضافة قاعدة','Add a rule'),'rule',{},'wide');for(const r of d.rules)h+=`<div class="card"><h3>${esc(r.name)}</h3><p class="muted">${kindName(r.kind)} · ${esc(d.outlets[r.channel-1].name)}</p><div class="row">${button(r.enabled?t('إيقاف','Pause'):t('تفعيل','Enable'),'ruleToggle',{id:r.id},'quiet')}${button(t('حذف','Delete'),'ruleDelete',{id:r.id},'danger')}</div></div>`}h+=`<div class="card"><h2>${t('المشاهد','Scenes')}</h2><p>${t('احفظ حالة المخارج الحالية وطبّقها بضغطة.','Save the current outlet states and apply them together.')}</p>${button(t('حفظ مشهد','Save scene'),'sceneSave',{},'wide')}</div>`;for(const sc of S.scenes||[])h+=`<div class="card"><h3>${esc(sc.name)}</h3><div class="row">${button(t('تطبيق','Apply'),'sceneApply',{id:sc.id})}${button(t('حذف','Delete'),'sceneDelete',{id:sc.id},'danger')}</div></div>`}
-if(tab==='energy'){h=`<h1>${t('طاقة أوضح','Energy at a glance')}</h1>`;if(d){h+=chooser();const wh=d.outlets.reduce((n,o)=>n+o.wh,0);h+=`<div class="card hero"><span>${t('طاقة محسوبة منذ التسجيل','Calculated since enrollment')}</span><p><b>${(wh/1000).toFixed(4)}</b> kWh</p><small>${t('التكلفة التقديرية','Estimated cost')}: ${d.outlets.reduce((n,o)=>n+(o.cost||0),0).toFixed(2)} EGP</small></div>`;if(historyData){h+='<div class="grid">';for(const k of ['today','week','month'])h+=`<div class="card"><small>${({today:t('اليوم','Today'),week:t('الأسبوع','Week'),month:t('الشهر','Month')})[k]}</small><h3>${historyData[k].kwh.toFixed(4)} kWh</h3><small>${t("تكلفة مسجلة","Tracked cost")}: ${(historyData[k].cost||0).toFixed(2)} EGP</small></div>`;h+='</div>';const pts=historyData.points||[];if(pts.length>1){const max=Math.max(1,...pts.map(p=>p.w));h+=`<div class="card"><svg class="chart" viewBox="0 0 320 120"><polyline points="${pts.map((p,i)=>`${i*320/(pts.length-1)},${115-p.w/max*110}`).join(' ')}"/></svg><small>${t('آخر ٧ أيام · وات','Last 7 days · watts')}</small></div>`}}h+=`<p class="help">${t('الطاقة من عينات الاتصال فقط. التكلفة الإجمالية تحتفظ بتقدير ما قبل التحديث بسعرك السابق؛ التكلفة اليومية والأسبوعية والشهرية المسجلة تبدأ من','Energy uses connected samples only. Total cost preserves the pre-update estimate at your prior price; tracked daily/weekly/monthly costs start on')} ${new Date(S.costTrackingFrom||Date.now()).toLocaleDateString(ar()?'ar-EG':'en-GB')}. ${t('الرسوم وفروق الشرائح غير مشمولة.','Fees and household tier adjustments excluded.')}</p><div class="row">${button(t('تحديث','Refresh'),'history')}${button(t('تصدير CSV','Export CSV'),'csv',{},'quiet')}</div>`}else h+=noDevice()}
-if(tab==='more')h=settingsView();$('main').innerHTML=h;if($('devicePick'))$('devicePick').value=selected;}
-function noDevice(){return `<p>${t('ضيف مشترك الأول','Add a strip first')}</p>`}
-function chooser(){return `<div class="card">${select('devicePick',t('المشترك','Strip'),(S.devices||[]).map(x=>[x.mac,esc(x.name)]))}</div>`}
-function deviceView(d){return `<div class="row gap"><h2>${esc(d.name)}</h2><span class="${d.online?'online':'offline'}">${d.online?t('متصل','Online'):t('غير متصل','Offline')}</span></div>${!d.enabled?button(t('تفعيل التحكم والمؤقتات','Enable controls & timers'),'enable',{},'wide'):''}<div class="grid gap">${d.outlets.map(o=>`<section class="card ${o.state==='on'?'active':''}"><div class="row"><svg class="big-icon" viewBox="0 0 24 24"><path d="M12 2v10 M6.4 5.5a9 9 0 1 0 11.2 0"/></svg>${button('✎','edit',{channel:o.channel},'text-button')}</div><h3>${esc(o.name)}</h3><small>${esc(o.room)}</small><span class="power">${o.watts==null?'—':o.watts.toFixed(2)} <small>W</small></span><button class="toggle ${o.pending&&S.motion?'pulse':''} ${o.state==='on'?'quiet':''}" data-action="control" data-channel="${o.channel}" data-state="${o.state==='on'?'off':'on'}" ${!d.online||!d.enabled||o.pending||o.state==='unknown'?'disabled':''}>${o.pending?t('تأكيد…','Confirming…'):o.state==='unknown'?t('في انتظار الحالة','Awaiting state'):o.state==='on'?t('فصل','Turn off'):t('تشغيل','Turn on')}</button>${button(o.timer!=null?`${Math.ceil(o.timer)}s · ${t('إلغاء','Cancel')}`:t('مؤقت الفصل','Off timer'),o.timer!=null?'cancelTimer':'timer',{channel:o.channel},'text-button wide')}</section>`).join('')}</div>`}
-function drawSetup(){let h=`<h1>${t('نوصّل المشترك','Connect your strip')}</h1><div class="steps">${[1,2,3].map(i=>`<i class="${i<=step?'done':''}"></i>`).join('')}</div>`;if(step===1){const n=api('network')||{};h+=`<div class="card"><span class="tag">1 / 3</span><h2 class="gap">${t('شبكة البيت','Home Wi-Fi')}</h2><p>${t('اتصل بواي فاي البيت 2.4 GHz بنظام WPA2-Personal. العنوان ده عنوان الموبايل، مش الكمبيوتر.','Connect to your 2.4 GHz home Wi-Fi using WPA2-Personal. This is your phone’s IP, not the PC’s.')}</p>${field('homeIP',t('عنوان الموبايل على شبكة البيت','Phone IP on home Wi-Fi'),home.ip||n.ip,'text','inputmode="decimal"')}${field('ssid',t('اسم واي فاي البيت','Home Wi-Fi name'),home.ssid)}${field('password',t('كلمة سر واي فاي البيت','Home Wi-Fi password'),home.password,'password')}<label class="check"><input id="verified" type="checkbox">${t('الشبكة 2.4 GHz وWPA2-Personal','Network is 2.4 GHz and WPA2-Personal')}</label>${button(t('حفظ ومتابعة','Save & continue'),'setupNext',{},'wide')}</div>`}if(step===2)h+=`<div class="card"><span class="tag">2 / 3</span><h2 class="gap">${t('شبكة المشترك','Strip setup Wi-Fi')}</h2><p>${t('اضغط مطولاً على زر المشترك الرئيسي لحد ما تظهر شبكة TONLY_TAP، ثم اكتب اسمها كامل. افتح إعدادات الواي فاي واتصل بيها، واختار الاحتفاظ بالاتصال بدون إنترنت.','Hold the strip’s main button until TONLY_TAP appears. Enter its full name, open Wi-Fi settings and connect. Keep the connection even without internet.')}</p>${field('ap',t('اسم شبكة المشترك','Strip network name'),home.ap,'text','placeholder="TONLY_TAP_904CF84"')}<p>${t('كلمة سر الشبكة','Setup Wi-Fi password')}: <strong class="code" id="apPass">${esc(apPassword(home.ap))}</strong></p>${button(t('فتح إعدادات الواي فاي','Open Wi-Fi settings'),'setupWifi',{},'quiet wide')}${button(t('متصل بشبكة المشترك — إرسال','Connected to strip — send settings'),'provision',{},'wide')}<p class="help">${t('اقفل أي خدمة تحكم أخرى شغالة على نفس الموبايل.','Stop any other controller service running on this phone.')}</p></div>`;if(step===3)h+=`<div class="card"><span class="tag">3 / 3</span><h2 class="gap">${t('ارجع لشبكة البيت','Return to home Wi-Fi')}</h2><p>${t('بعد إرسال الإعدادات، اتصل بشبكة البيت تاني واستنى المشترك يظهر متصل. خلي التطبيق مفتوح.','After settings are sent, reconnect to home Wi-Fi and wait for the strip to appear online. Keep the app open.')}</p><p class="${S.setupStatus==='error'?'error':'success'}">${setupMessage()}</p>${button(t('فتح إعدادات الواي فاي','Open Wi-Fi settings'),'wifiSettings',{},'quiet wide')}${button(t('افتح أجهزتي','Open my devices'),'finishSetup',{},'wide')}${S.setupStatus==='error'?button(t('إعادة المحاولة','Try again'),'retrySetup',{},'quiet wide'):''}</div>`;h+=button(t('الرجوع للرئيسية','Back to home'),'finishSetup',{},'quiet wide');$('main').innerHTML=h}
-function setupMessage(){return ({idle:t('جاهز','Ready'),sending:t('بيتم إرسال الإعدادات…','Sending settings…'),sent:t('الإعدادات اتبعتت، ارجع لواي فاي البيت','Settings sent. Reconnect to home Wi-Fi'),connected:t('المشترك اتصل بنجاح','Strip connected successfully'),error:t('الإرسال فشل. راجع اتصالك بشبكة المشترك وحاول تاني.','Setup failed. Check connection to strip Wi-Fi and retry.')})[S.setupStatus]||S.setupStatus}
-function apPassword(ap){return /^TONLY_TAP_[0-9a-f]{6,12}$/i.test(ap.trim())?'LGU_'+ap.trim().split('_').pop():t('اكتب اسم الشبكة فوق','Enter network name above')}
-function kindName(k){return ({schedule:t('جدول أسبوعي','Weekly schedule'),autooff:t('فصل بعد التشغيل','Auto-off after on'),standby:t('سؤال عند انخفاض الاستهلاك','Low-use suggestion'),power_limit:t('تنبيه عند ارتفاع الاستهلاك','High-power alert'),away:t('محاكاة وجودك','Presence simulation')})[k]}
-function timerForm(ch){modal(`<h2>${t('مؤقت الفصل','Off timer')}</h2><input id="channel" type="hidden" value="${ch}">${select('timerMode',t('النوع','Mode'),[['mixed',t('دقائق وثواني','Minutes & seconds')],['seconds',t('ثواني','Seconds')],['minutes',t('دقائق','Minutes')],['clock',t('وقت محدد','Specific time')]])}<div id="timerFields"></div>${button(t('ضبط المؤقت','Set timer'),'saveTimer',{},'wide')}`);timerFields()}
-function timerFields(){const mode=$('timerMode').value;$('timerFields').innerHTML=mode==='clock'?field('at',t('تاريخ ووقت الفصل خلال ٢٤ ساعة','Date & time within 24 hours'),'','datetime-local','step="1"'):mode==='mixed'?field('minutes',t('دقائق','Minutes'),0,'number','min="0" max="1440"')+field('seconds',t('ثواني','Seconds'),30,'number','min="0" max="59"'):field('duration',mode==='minutes'?t('دقائق','Minutes'):t('ثواني','Seconds'),1,'number','min="1" step="1"')}
-function ruleForm(){if(!dev())return toast(t('ضيف جهاز الأول','Add a device first'));modal(`<h2>${t('قاعدة جديدة','New rule')}</h2>${field('ruleName',t('اسم القاعدة','Rule name'))}${select('ruleChannel',t('المخرج','Outlet'),dev().outlets.map(o=>[o.channel,esc(o.name)]))}${select('kind',t('نوع القاعدة','Rule type'),['schedule','autooff','standby','power_limit','away'].map(k=>[k,kindName(k)]))}<div id="ruleFields"></div><p class="help">${t('القواعد محتاجة التطبيق متصل. مش بديل لوسائل الحماية الكهربائية.','Rules need an active app connection. They do not replace electrical protection.')}</p>${button(t('حفظ القاعدة','Save rule'),'saveRule',{},'wide')}`);ruleFields()}
-function ruleFields(){const k=$('kind').value;let h='';if(k==='schedule')h=field('time',t('الوقت','Time'),'12:00','time','step="1"')+select('target',t('الإجراء','Action'),[['off',t('فصل','Off')],['on',t('تشغيل','On')]])+`<label>${t('الأيام','Days')}</label>`+['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map((d,i)=>`<label class="check"><input type="checkbox" class="day" value="${i}" checked>${ar()?['الإثنين','الثلاثاء','الأربعاء','الخميس','الجمعة','السبت','الأحد'][i]:d}</label>`).join('');if(['autooff','standby','power_limit'].includes(k))h=field('ruleSeconds',t('المدة بالثواني','Duration in seconds'),60,'number','min="1" max="86400"');if(['standby','power_limit'].includes(k))h+=field('watts',t('حد القدرة بالوات','Power threshold in watts'),k==='standby'?2:100,'number','min="0" max="4000" step="0.1"');if(k==='away')h=field('startAt',t('من الساعة','From'),'18:00','time')+field('endAt',t('لحد الساعة','Until'),'22:00','time')+field('minDelay',t('أقل فاصل بالثواني','Minimum interval in seconds'),300,'number')+field('maxDelay',t('أكبر فاصل بالثواني','Maximum interval in seconds'),900,'number');$('ruleFields').innerHTML=h}
-function act(a,b={}){if(a==='tab'){setup=false;tab=b.tab;if(tab==='energy')loadHistory();draw();return}if(a==='close')return closeModal();if(a==='setup'){setup=true;step=1;draw();return}if(a==='finishSetup'){setup=false;tab='devices';refresh();return}if(a==='retrySetup'){step=2;draw();return}if(a==='setupNext'){if(!$('verified').checked)return toast(t('أكد نوع شبكة الواي فاي الأول','Confirm Wi-Fi type first'));home={...home,ip:$('homeIP').value.trim(),ssid:$('ssid').value,password:$('password').value};if(!home.ssid||home.password.length<8)return toast(t('راجع اسم الشبكة وكلمة السر','Check Wi-Fi credentials'));if(api('saveHome',{ip:home.ip,ssid:home.ssid})){api('start');step=2;draw()}return}if(a==='setupWifi'){home.ap=$('ap').value.trim();api('wifiSettings');return}if(a==='provision'){home.ap=$('ap').value.trim();if(api('provision',home)){step=3;refresh()}return}if(a==='choose'){selected=b.mac;tab='devices';draw();return}if(a==='control'){api('control',payload({channel:+b.channel,state:b.state}));refresh();return}if(a==='enable'){api('enable',payload({enabled:true}));refresh();return}if(a==='timer')return timerForm(+b.channel);if(a==='cancelTimer'){api('timer',payload({channel:+b.channel,seconds:0}));refresh();return}if(a==='saveTimer'){const mode=$('timerMode').value;let x={channel:+$('channel').value};if(mode==='clock')x.at=new Date($('at').value).getTime()/1000;else x.seconds=mode==='mixed'?Number($('minutes').value)*60+Number($('seconds').value):Number($('duration').value)*(mode==='minutes'?60:1);if(!(x.seconds>0||x.at>Date.now()/1000))return toast(t('اختار وقت صحيح في المستقبل','Choose a valid future time'));if(api('timer',payload(x))){closeModal();toast(t('المؤقت اتضبط','Timer set'));refresh()}return}if(a==='edit'){const o=dev().outlets[+b.channel-1];modal(`<h2>${t('تعديل المخرج','Edit outlet')}</h2><input id="channel" type="hidden" value="${o.channel}">${field('name',t('الاسم','Name'),o.name)}${field('room',t('الغرفة','Room'),o.room)}${button(t('حفظ','Save'),'saveMeta',{},'wide')}`);return}if(a==='saveMeta'){if(api('meta',payload({channel:+$('channel').value,name:$('name').value,room:$('room').value}))){closeModal();refresh()}return}if(a==='rule')return ruleForm();if(a==='saveRule'){let r={kind:$('kind').value,name:$('ruleName').value,channel:+$('ruleChannel').value};if(r.kind==='schedule')Object.assign(r,{time:$('time').value,state:$('target').value,days:[...document.querySelectorAll('.day:checked')].map(x=>+x.value)});if(['autooff','standby','power_limit'].includes(r.kind))r.seconds=+$('ruleSeconds').value;if(['standby','power_limit'].includes(r.kind))r.watts=+$('watts').value;if(r.kind==='away')Object.assign(r,{start:$('startAt').value,end:$('endAt').value,min_seconds:+$('minDelay').value,max_seconds:+$('maxDelay').value});if(api('ruleAdd',payload(r))){closeModal();refresh()}return}if(['ruleToggle','ruleDelete','sceneApply','sceneDelete'].includes(a)){if((a.endsWith('Delete')||a==='sceneApply')&&!confirm(({ruleDelete:t('متأكد إنك عايز تحذف القاعدة؟','Are you sure you want to delete this rule?'),sceneDelete:t('متأكد إنك عايز تحذف المشهد؟','Are you sure you want to delete this scene?'),sceneApply:t('متأكد إنك عايز تطبق المشهد وتغيّر حالة المخارج المحفوظة فيه؟','Are you sure you want to apply this scene and change its saved outlets?')})[a]))return;const r=api(a,a.startsWith('rule')?payload({id:b.id}):{id:b.id});if(r?.results?.some(x=>!x.ok))toast(t('بعض المخارج لم تنفّذ الأمر','Some outlets did not execute'));refresh();return}if(a==='sceneSave'){modal(`<h2>${t('حفظ الحالة الحالية','Save current state')}</h2>${field('sceneName',t('اسم المشهد','Scene name'))}${button(t('حفظ','Save'),'saveScene',{},'wide')}`);return}if(a==='saveScene'){if(api('sceneSave',{name:$('sceneName').value})){closeModal();refresh()}return}if(a==='allOff'){if(confirm(t('تفصل كل المخارج؟','Turn all outlets off?'))){const r=api('allOff');if(r?.results?.some(x=>!x.ok))toast(t('بعض المخارج لم تنفّذ الأمر؛ راجع اتصالها وتفعيل التحكم','Some outlets failed; check connectivity and enabled controls'))}refresh();return}if(a==='history'){loadHistory();draw();return}if(['csv','diagnostics'].includes(a)){api('export',{what:a,device:dev()?.mac||''});return}if(a==='soundSetting'||a==='motionSetting'){api('settings',a==='soundSetting'?{sound:!S.sound}:{motion:!S.motion});refresh();return}if(a==='events'){modal(`<h2>${t('سجل الأحداث','Event log')}</h2>${(S.events||[]).slice().reverse().map(e=>`<div class="list"><small>${new Date(e.ts).toLocaleTimeString()}</small><p class="code">${esc(e.code)} ${esc(e.detail)}</p></div>`).join('')}`);return}api(a);setTimeout(()=>refresh(),400)}
-function loadHistory(){historyData=dev()?api('history',payload({days:7})):null}
-document.addEventListener('click',e=>{const b=e.target.closest('[data-action]');if(b&&!b.disabled)act(b.dataset.action,b.dataset)});document.addEventListener('change',e=>{if(e.target.id==='timerMode')timerFields();if(e.target.id==='kind')ruleFields();if(e.target.id==='devicePick'){selected=e.target.value;if(tab==='energy')loadHistory();draw()}});document.addEventListener('input',e=>{if(e.target.id==='ap')$('apPass').textContent=apPassword(e.target.value)});$('language').onclick=()=>{api('settings',{lang:ar()?'en':'ar'});refresh()};window.goBack=()=>{if($('sheet').open)closeModal();else if(setup&&step>1){step--;draw()}else{setup=false;tab='home';draw()}};refresh(false);if(!S.onboarded)setup=true;draw();setInterval(()=>{if(setup&&step!==3)return;refresh(true,true)},250);
 
-// Type-G Smart 0.2 — UI enhancements; device confirmation remains authoritative.
-let lastLiveKey='';
-const baseDraw=draw,baseAct=act,baseRuleFields=ruleFields;
-const powerIcon='<svg viewBox="0 0 24 24"><path d="M12 2v10 M6.4 5.5a9 9 0 1 0 11.2 0"/></svg>';
-function liveKey(){return JSON.stringify([tab,selected,S.lang,S.running,S.motion,S.sound,S.haptic,(S.prompts||[]).map(p=>p.token),(S.devices||[]).map(d=>[d.mac,d.name,d.online,d.enabled,d.outlets.map(o=>[o.channel,o.name,o.room,o.state,o.pending])])])}
-deviceView=function(d){return `<div class="row gap"><h2>${esc(d.name)}</h2><span class="${d.online?'online':'offline'}">${d.online?t('متصل','Online'):t('غير متصل','Offline')}</span></div>${!d.enabled?button(t('تفعيل التحكم والمؤقتات','Enable controls & timers'),'enable',{},'wide'):''}<div class="grid gap">${d.outlets.map(o=>`<section data-outlet="${o.channel}" class="card outlet-card ${o.state==='on'?'active':''}"><div class="row"><h3>${esc(o.name)}</h3>${button('✎','edit',{channel:o.channel},'text-button')}</div><small>${esc(o.room)}</small><div class="switch-wrap"><button aria-label="${esc(o.name)}: ${o.state==='on'?t('فصل','Turn off'):t('تشغيل','Turn on')}" class="physical-switch ${o.state==='on'?'is-on':o.state==='off'?'is-off':'is-unknown'} ${o.pending?'is-pending':''}" data-action="control" data-channel="${o.channel}" data-state="${o.state==='on'?'off':'on'}" ${!d.online||!d.enabled||o.pending||o.state==='unknown'?'disabled':''}>${powerIcon}<span class="switch-led"></span></button></div><div class="switch-label">${o.pending?t('في انتظار التأكيد…','Waiting for confirmation…'):o.state==='on'?t('فصل','Turn off'):o.state==='off'?t('تشغيل','Turn on'):t('الحالة غير معروفة','State unknown')}</div><div class="state">${o.state==='on'?t('شغال','On'):o.state==='off'?t('مطفي','Off'):'—'}</div><span class="power">${o.watts==null?'—':o.watts.toFixed(2)} <small>W</small></span>${button(o.timer!=null?`${Math.ceil(o.timer)}s · ${t('إلغاء','Cancel')}`:t('مؤقت الفصل','Off timer'),o.timer!=null?'cancelTimer':'timer',{channel:o.channel},'text-button wide')}</section>`).join('')}</div>`};
-function patchLive(){if(!S.license?.active)return false;if(setup||!['home','devices'].includes(tab)||lastLiveKey!==liveKey())return false;const d=dev();if(!d)return false;for(const o of d.outlets){const card=document.querySelector(`[data-outlet="${o.channel}"]`);if(!card)return false;card.querySelector('.power').innerHTML=`${o.watts==null?'—':o.watts.toFixed(2)} <small>W</small>`;const bt=card.querySelector('[data-action="timer"],[data-action="cancelTimer"]');if(bt){bt.dataset.action=o.timer!=null?'cancelTimer':'timer';bt.textContent=o.timer!=null?`${Math.ceil(o.timer)}s · ${t('إلغاء','Cancel')}`:t('مؤقت الفصل','Off timer')}}const total=document.querySelector('.hero b');if(total){const values=(S.devices||[]).flatMap(x=>x.online?x.outlets:[]).filter(o=>o.watts!=null);total.textContent=values.length?values.reduce((n,o)=>n+o.watts,0).toFixed(2):'—'}return true}
-ruleFields=function(){baseRuleFields();if(['standby','power_limit'].includes($('kind').value)){$('ruleSeconds').value=300;$('ruleFields').insertAdjacentHTML('beforeend',`<p class="help">${t('إشعار يسألك فقط. اختار الحد بعد مراقبة جهازك؛ الخمول ممكن يكون وضع Sleep.','Notification asks only. Choose the threshold after observing your device; low use may be sleep mode.')}</p>`)}};
-act=function(a,b={}){
- if(a==='answer'){api('promptAnswer',{token:b.token,answer:b.answer});refresh();return}
- if(a==='wakeForm'){const w=S.wakeConfig||{},n=api('network')||{},parts=(n.ip||'').split('.');const target=parts.length===4?parts.slice(0,3).join('.')+'.255':'';modal(`<h2>${t('إيقاظ الكمبيوتر فقط','Wake computer only')}</h2>${field('pcName',t('اسم الكمبيوتر','Computer name'),w.name||'PC')}${field('pcMac',t('MAC لكارت شبكة الكمبيوتر','Computer network adapter MAC'),w.mac||'','text','placeholder="AA:BB:CC:DD:EE:FF"')}${field('pcBroadcast',t('عنوان Broadcast لشبكة الكمبيوتر','Computer network broadcast'),w.broadcast||target)}${field('pcPort',t('المنفذ','Port'),w.port||9,'number','min="1" max="65535"')}<p class="help">${t('انقل نفس الإعدادات اللي شغالة معاك. العنوان المقترح يفترض شبكة /24. الكمبيوتر لازم تكون كهرباؤه موصلة وWake-on-LAN مفعّل. لا توجد أوامر إغلاق أو إعادة تشغيل.','Use your working wake settings. Suggested address assumes a /24 network. PC power must be connected and Wake-on-LAN enabled. No shutdown or restart commands.')}</p>${button(t('حفظ','Save'),'wakeSaveForm',{},'wide')}${button(t('إرسال رسالة الإيقاظ','Send wake packet'),'wakeNow',{},'quiet wide')}<p id="wakeResult" class="success"></p>`);return}
- if(a==='wakeSaveForm'){if(api('wakeSave',{name:$('pcName').value,mac:$('pcMac').value,broadcast:$('pcBroadcast').value,port:+$('pcPort').value})){closeModal();refresh();toast(t('تم حفظ الكمبيوتر','Computer saved'))}return}
- if(a==='wakeNow'){if($('pcMac')&&$('sheet').open){if(!api('wakeSave',{name:$('pcName').value,mac:$('pcMac').value,broadcast:$('pcBroadcast').value,port:+$('pcPort').value}))return}else if(!S.wakeConfig?.mac)return act('wakeForm');if(!api('wake'))return;toast(t('بيتم إرسال رسالة الإيقاظ…','Sending wake packet…'));let checks=0;const watcher=setInterval(()=>{const s=api('state');if(!s||++checks>12){clearInterval(watcher);return}if(s.wakeStatus==='sent'||s.wakeStatus==='error'){clearInterval(watcher);const msg=s.wakeStatus==='sent'?t('رسالة الإيقاظ اتبعتت؛ ده مش تأكيد إن الكمبيوتر فتح.','Wake packet sent; this does not confirm the PC booted.'):t('تعذر الإرسال. راجع الواي فاي والإعدادات.','Could not send. Check Wi-Fi and settings.');toast(msg);if($('wakeResult'))$('wakeResult').textContent=msg}},300);return}
- if(a==='powerInfo'){modal(`<h2>${t('الحماية ورجوع الكهرباء','Protection & power restoration')}</h2><p>${t('المواصفة المنشورة من الشركة: فصل زيادة الحمل فوق إجمالي ٣٥٢٠ وات، والاستخدام الموصى به ٣٠٠٠ وات أو أقل. ده وصف للتصميم، مش فحص لحالة وحدتك.','Published specification: overload cutoff above 3520W total, recommended use at or below 3000W. This describes the design, not a test of your unit.')}</p><p>${t('حماية الفولت والنبضات وتأخير رجوع الكهرباء غير متحققة. المخرج قد يوصل الكهرباء قبل اتصال التطبيق. التطبيق لا يضمن حماية الأجهزة عند رجوع الكهرباء.','Voltage/surge protection and restart delay are unverified. An outlet may energize before the app reconnects. The app cannot guarantee protection after power restoration.')}</p><p>${t('عند فقد الاتصال: نلغي المؤقتات ونوقف القواعد. عند رجوعه: تراجع الحالة وتفعل التحكم بنفسك. فقد الواي فاي مش إثبات لانقطاع الكهرباء.','When disconnected: timers cancel and rules pause. After reconnecting: review state and enable controls. Lost Wi-Fi does not prove a power outage.')}</p><p class="muted">${t('للتحقق لاحقًا: اختبر فصلًا ورجوعًا عاديًا للمشترك مع شاحن فقط، بدون كمبيوتر أو أجهزة مهمة. لا تختبر زيادة الحمل أو التذبذب عمدًا.','To verify later: test one normal power interruption with only a charger attached, without critical devices. Do not intentionally create overloads or unstable supply.')}</p>`);return}
- baseAct(a,b);
-};
+/* ---------- i18n ---------- */
+let LANG = (localStorage.getItem('lang') || 'ar');
+const AR = () => LANG === 'ar';
+const t = (ar, en) => (AR() ? ar : en);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
-// Type-G Smart 0.3 — centralized settings, outlet profiles, explicit group selection.
-const deviceTypes=()=>[['',t('اختار نوع الجهاز','Choose device type')],['desktop',t('كمبيوتر مكتبي','Desktop computer')],['monitor',t('شاشة كمبيوتر','Computer monitor')],['tv',t('تليفزيون','Television (TV)')],['laptop',t('لابتوب','Laptop')],['charger',t('شاحن موبايل','Phone charger')],['router',t('راوتر','Router')],['fan',t('مروحة','Fan')],['other',t('جهاز آخر — اكتب اسمه','Other — enter name')],['multiple',t('أجهزة متعددة','Multiple devices')]];
-let chosen=new Set(),chosenMac='',settingsStamp='';
-const v2Act=act;
-function typeLabel(type){return deviceTypes().find(([k])=>k===type)?.[1]||t('النوع غير محدد','Type not set')}
-function applyTheme(cfg){const mode=cfg.themeMode||'system';document.documentElement.dataset.mode=mode==='system'?(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'):mode;document.documentElement.dataset.palette=cfg.palette||'mint'}
-matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>applyTheme(themePreview||S));
-function checkSetting(id,label,value){return `<label class="setting-row" for="${id}"><span>${label}</span><input type="checkbox" id="${id}" data-setting="${id}" ${value?'checked':''}></label>`}
-function settingsView(){return `<h1>${t('الإعدادات','Settings')}</h1><p class="muted">${t('كل اختيارات البرنامج في مكان واحد','Every app preference, in one place')}</p>
-<section class="card"><h2>${t('المظهر واللغة','Appearance & language')}</h2>${select('appLanguage',t('اللغة','Language'),[['ar','العربية'],['en','English']])}${button(t('الألوان والوضع الداكن','Colors & dark mode'),'themeForm',{},'quiet wide')}${checkSetting('motion',t('حركة الأزرار','Button animations'),S.motion!==false)}</section>
-<section class="card"><h2>${t('الصوت والاهتزاز','Sound & haptics')}</h2>${checkSetting('sound',t('أصوات التشغيل والفصل','Switch sounds'),S.sound!==false)}${checkSetting('haptic',t('اهتزاز عند تأكيد الأمر','Vibrate when command is confirmed'),S.haptic!==false)}${field('volume',t('مستوى صوت الأزرار %','Button sound volume %'),S.soundVolume??85,'range','min="0" max="100" step="5"')}<p class="help">${t('الصوت بيتأثر بمستوى صوت الوسائط، والاهتزاز بإعدادات الموبايل.','Media volume affects sound; phone settings affect haptics.')}</p><p class="muted">${t('الصوت والاهتزاز عند وصول تأكيد المشترك، مش عند مجرد اللمس.','Feedback plays when the strip confirms, not simply on touch.')}</p></section>
-<section class="card"><h2>${t('التحليل والإشعارات','Analysis & notifications')}</h2>${checkSetting('analysis',t('تحليل الاستهلاك محليًا','Analyze consumption locally'),S.analysis!==false)}${checkSetting('suggestions',t('اسألني عند انخفاض الاستهلاك','Ask me about low use'),S.suggestions!==false)}${checkSetting('usageAlerts',t('تنبيهات زيادة الاستهلاك','High-use alerts'),S.usageAlerts!==false)}<p class="help">${t('التحليل بيسأل فقط؛ تجاهل التنبيه لا يفصل الكهرباء. المؤقتات والجداول اللي بتحددها بنفسك بتفضل شغالة.','Analysis only asks; ignoring an alert never cuts power. Your explicitly configured timers and schedules still run.')}</p>${button(t('إعدادات إشعارات الموبايل','Phone notification settings'),'notificationSettings',{},'text-button wide')}</section>
-<section class="card"><h2>${t('الاتصال والخدمة','Connection & controller')}</h2>${button(t('إضافة مشترك / إعادة الإعداد','Add strip / set up again'),'setup',{},'wide')}<div class="row gap">${button(S.running?t('إيقاف الخدمة','Stop service'):t('تشغيل الخدمة','Start service'),S.running?'stop':'start',{},'quiet')}${button(t('إعدادات البطارية','Battery settings'),'batterySettings',{},'quiet')}</div>${select('refreshRate',t('فاصل قراءة الاستهلاك أثناء فتح التطبيق','Power refresh while app is open'),[[1,t('ثانية — تجريبي','1 second — experimental')],[3,t('٣ ثوانٍ — افتراضي','3 seconds — default')],[5,t('٥ ثوانٍ','5 seconds')],[10,t('١٠ ثوانٍ','10 seconds')]])}<p class="muted">${t('الخلفية: كل ١٠ ثوانٍ. المؤقتات والتحليل محتاجين الخدمة والاتصال مستمرين.','Background: every 10 seconds. Timers and analysis need the controller and connection running.')}</p></section>
-<section class="card"><h2>${t('الاختصارات والكمبيوتر','Widgets & computer')}</h2>${button(t('إضافة Widget للشاشة الرئيسية','Add a home screen widget'),'widgetPin',{},'quiet wide')}${button(t('إعداد إيقاظ الكمبيوتر','Configure Wake-on-LAN'),'wakeForm',{},'quiet wide')}</section>
-<section class="card"><h2>${t('حساب تكلفة الطاقة','Energy cost')}</h2>${button(t('اختيار شريحة العداد وحد الطاقة اليومي','Meter tariff tier & daily energy limit'),'tariff',{},'quiet wide')}</section>
-<section class="card"><h2>${t('حول البرنامج والتشخيص','About & diagnostics')}</h2>${button(t('الانقطاع ورجوع الكهرباء','Connection & power restoration'),'powerInfo',{},'quiet wide')}${button(t('سجل الأحداث','Event log'),'events',{},'quiet wide')}${button(t('تصدير التشخيص','Export diagnostics'),'diagnostics',{},'quiet wide')}<p class="code">Type-G Smart · 1.2.1</p></section>`}
-deviceView=function(d){if(chosenMac!==d.mac){chosen.clear();chosenMac=d.mac}return `<div class="row gap"><h2>${esc(d.name)}</h2><span class="${d.online?'online':'offline'}">${d.online?t('متصل','Online'):t('غير متصل','Offline')}</span></div>${!d.enabled?button(t('تفعيل التحكم والمؤقتات','Enable controls & timers'),'enable',{},'wide'):''}<div class="groupbar card"><div class="row"><strong>${t('تحكم جماعي','Group control')}</strong>${button(chosen.size===4?t('إلغاء التحديد','Clear selection'):t('تحديد الكل','Select all'),'selectAll',{},'text-button')}</div><p><span id="selectionCount">${chosen.size}</span> ${t('مخارج محددة','outlets selected')}</p><div class="row">${button(t('تشغيل المحدد','Selected on'),'selectedControl',{state:'on'})}${button(t('فصل المحدد','Selected off'),'selectedControl',{state:'off'},'danger')}</div></div><div class="grid gap">${d.outlets.map(o=>`<section data-outlet="${o.channel}" class="card outlet-card ${o.state==='on'?'active':''}"><div class="row"><input aria-label="${t('تحديد','Select')} ${esc(o.name)}" type="checkbox" class="outlet-select" data-channel="${o.channel}" ${chosen.has(o.channel)?'checked':''}>${button('✎','edit',{channel:o.channel},'text-button')}</div><button class="outlet-name text-button" data-action="edit" data-channel="${o.channel}">${esc(o.name)}</button><small class="device-type">${esc(typeof profileLabel==='function'?profileLabel(o):typeLabel(o.type||''))}</small><div class="switch-wrap"><button aria-label="${esc(o.name)}: ${o.state==='on'?t('فصل','Turn off'):t('تشغيل','Turn on')}" class="physical-switch ${o.state==='on'?'is-on':o.state==='off'?'is-off':'is-unknown'} ${o.pending?'is-pending':''}" data-action="control" data-channel="${o.channel}" data-state="${o.state==='on'?'off':'on'}" ${!d.online||!d.enabled||o.pending||o.state==='unknown'?'disabled':''}>${powerIcon}<span class="switch-led"></span></button></div><div class="switch-label">${o.pending?t('في انتظار التأكيد…','Waiting for confirmation…'):o.state==='on'?t('فصل','Turn off'):o.state==='off'?t('تشغيل','Turn on'):t('الحالة غير معروفة','State unknown')}</div><div class="state">${o.state==='on'?t('شغال','On'):o.state==='off'?t('مطفي','Off'):'—'}</div><span class="power">${o.watts==null?'—':o.watts.toFixed(2)} <small>W</small></span>${!o.type?`<small class="configure-note">${t('اختيار النوع يساعد التحليل','Choose a type to improve analysis')}</small>`:''}${button(o.timer!=null?`${Math.ceil(o.timer)}s · ${t('إلغاء','Cancel')}`:t('مؤقت الفصل','Off timer'),o.timer!=null?'cancelTimer':'timer',{channel:o.channel},'text-button wide')}</section>`).join('')}</div>`};
-liveKey=function(){return JSON.stringify([tab,selected,S.lang,S.running,S.motion,S.sound,S.haptic,(S.prompts||[]).map(p=>p.token),(S.devices||[]).map(d=>[d.mac,d.name,d.online,d.enabled,d.outlets.map(o=>[o.channel,o.name,o.type,o.room,o.state,o.pending])])])};
-draw=function(){if(!S.terms?.accepted){if(typeof drawTerms==='function')drawTerms();else $('main').innerHTML='';return}baseDraw();lastLiveKey=liveKey();if(setup)return;if(tab==='more'){$('appLanguage').value=S.lang||'ar';$('refreshRate').value=S.pollSeconds||3;return}if(tab==='home'){$('main').insertAdjacentHTML('beforeend',`<section class="card"><h2>${t('اختصاراتك','Your shortcuts')}</h2>${button(t('تشغيل الكمبيوتر','Wake computer'),'wakeNow',{},'wide')}</section>`);for(const p of S.prompts||[])$('main').insertAdjacentHTML('afterbegin',`<section class="card question"><h3>${esc(p.name)}</h3><p>${p.kind==='standby'?t('الاستهلاك منخفض؛ ممكن الجهاز في وضع سكون. تحب تفصل ولا تسيبه شغال؟','Usage is low; the device may be asleep. Turn off or keep it on?'):p.learned?t('الاستهلاك أعلى من النمط المتعلم. ده مش تشخيص عطل. تحب تفصل؟','Usage is above the learned pattern. This is not a fault diagnosis. Turn off?'):t('الاستهلاك عدى الحد المحدد. تحب تفصل؟','Usage exceeded your chosen limit. Turn off?')}</p><div class="row">${button(t('افصل','Turn off'),'answer',{token:p.token,answer:'off'},'danger')}${button(t('سيبه شغال','Keep on'),'answer',{token:p.token,answer:'keep'},'quiet')}${button(t('بعدين','Later'),'answer',{token:p.token,answer:'later'},'quiet')}</div></section>`)}if(tab==='energy'){$('main').insertAdjacentHTML('beforeend',`<section class="card"><h2>${t('التعلم من استهلاكك','Learning your usage')}</h2><p>${t('تحليل إحصائي محلي؛ مش تشخيص أعطال ولا تحديد تلقائي لنوع الجهاز. محتاج حوالي ساعة تشغيل متصلة بعينات كفاية، والأفضل يشوف الاستخدام المعتاد كله.','Local statistics, not fault diagnosis or automatic device identification. Needs about an hour of connected ON samples; include your normal range of use.')}</p>${(dev()?.outlets||[]).map(o=>`<div class="list"><h3>${esc(o.name)}</h3><small>${esc(typeof profileLabel==='function'?profileLabel(o):typeLabel(o.type||''))}</small><p>${o.learningReady?`${t('النمط جاهز · عتبة الزيادة المتعلمة','Pattern ready · learned high-use threshold')}: ${Number(o.normalHigh).toFixed(1)} W`:t('جاري التعلم','Learning')+` · ${Math.min(100,Math.floor((o.learningSamples||0)/360*100))}%`}</p>${button(t('إعادة التعلم','Reset learning'),'resetLearning',{channel:o.channel},'text-button')}</div>`).join('')}<p class="help">${t('الزيادة لازم تستمر دقيقة للتنبيه، وانخفاض الاستخدام حسب المدة اللي اخترتها. نبضات الكهرباء السريعة ممكن متظهرش في القراءات. القرار دايمًا ليك.','High usage must persist for a minute; low usage follows your chosen delay. Fast transients may be missed between samples. You always decide.')}</p></section>`)}if(tab==='auto')$('main').insertAdjacentHTML('afterbegin',`<p class="help">${t('قواعد انخفاض وزيادة الاستهلاك بتسأل فقط. الجداول والمؤقتات الصريحة بتنفذ اختياراتك.','Consumption rules only ask. Explicit schedules and timers execute your choices.')}</p>`);};
-function editOutlet(channel){const o=dev().outlets[channel-1];modal(`<h2>${t('الجهاز المتوصل بالمخرج','Connected device')}</h2><input id="channel" type="hidden" value="${channel}">${field('name',t('اسم الجهاز','Device name'),o.name)}${select('deviceType',t('نوع الجهاز — مطلوب للتشغيل','Device type — required for ON'),deviceTypes())}${field('room',t('الغرفة','Room'),o.room)}<label class="check"><input id="keepConnected" type="checkbox" ${o.keepConnected?'checked':''}>${t('لا تقترح فصل الجهاز عند قلة الاستهلاك','Do not suggest disconnecting during low use')}</label><label class="check"><input id="sleepMode" type="checkbox" ${o.sleepMode?'checked':''}>${t('الجهاز بيستخدم وضع Sleep / Standby','Device uses Sleep / Standby')}</label>${field('lowMinutes',t('اسأل بعد انخفاض الاستخدام لمدة (دقائق)','Ask after low use for (minutes)'),o.lowMinutes||10,'number','min="1" max="1440"')}<p class="help">${t('تغيير نوع الجهاز أو اسمه يبدأ تعلم جديد. اختيار النوع مش ضمان حماية كهربائية. لو متعدد: التحليل للمجموعة كلها.','Changing name or type restarts learning. Choosing a type does not guarantee electrical protection. Multiple devices are analyzed as one group.')}</p>${button(t('حفظ بيانات الجهاز','Save device profile'),'saveMeta',{},'wide')}`);$('deviceType').value=o.type||''}
-function group(state,channels,d=dev()){if(!d)return;const r=api('groupControl',{device:d.mac,state,channels});if(r?.results?.some(x=>!x.ok))toast(t('بعض المخارج لم تنفذ الأمر. راجع نوع الجهاز والاتصال والتفعيل.','Some outlets failed. Check device types, connection and enabled controls.'));return r}
-act=function(a,b={}){
- if(a==='tariff'){const rates=S.tariffCatalog||[];modal(`<h2>${t('الشريحة الظاهرة على العداد','Tier shown on your meter')}</h2><p>${t('اختار نفس رقم الشريحة. السعر يتحدد تلقائيًا؛ تغييره يطبق على الاستهلاك الجديد فقط.','Choose the same tier number. Its price applies automatically to new consumption only.')}</p>${select('meterTier',t('الشريحة / التعريفة','Tier / tariff'),[[0,t('اختار — احتفظ بالسعر السابق','Choose — retain prior price')],...rates.map(r=>[r.tier,`${r.tier===8?t('كودي — تعريفة موحدة','Code meter — flat tariff'):t('الشريحة ','Tier ')+r.tier} · ${Number(r.price).toFixed(2)} EGP/kWh`])])}<div class="card hero"><strong id="tierPrice"></strong><p id="tierSource" class="muted"></p></div><p class="help">${t('أسعار الشرائح المنزلية إرشادية من جدول منشور ٢٣ أغسطس ٢٠٢٦؛ توجد اختلافات بالمصادر ولم نحسم الجدول الرسمي الأحدث. التعريفة الكودية الموحدة منشورة رسميًا لأبريل ٢٠٢٦. طابق السعر مع عدادك/شركة الكهرباء.','Residential prices are indicative, from a table published 23 August 2026. Sources disagree and the latest official table is unconfirmed. The flat code-meter tariff is officially published for April 2026. Compare with your meter/utility.')}</p>${field('limit',t('حد الطاقة اليومي kWh — صفر للإلغاء','Daily energy log limit kWh — 0 disables'),S.dailyLimit,'number','step="0.1" min="0"')}${button(t('حفظ الشريحة','Save tier'),'saveTariff',{},'wide')}<p class="muted">${t('البرنامج لا يحدد شريحتك ولا ينتقل بينها تلقائيًا؛ غيّر الاختيار لما يتغير على العداد.','The app never infers or automatically changes your tier; update it when your meter changes.')}</p>`);$('meterTier').value=S.tariffTier||0;showTierPrice();return}
- if(a==='saveTariff'){const tier=+$('meterTier').value;if(!tier)return toast(t('اختار الشريحة الظاهرة على العداد الأول','Choose the tier shown on your meter first'));if(api('settings',{tariffTier:tier,dailyLimit:+$('limit').value})){closeModal();refresh(false);draw();toast(t('اتحفظت. الاستهلاك الجديد بس هيتحسب بالسعر المختار','Saved. Only new consumption uses the selected price'))}return}
+/* ---------- bridge (real or mock) ---------- */
+const hasBridge = !!(window.TypeG && window.TypeG.call);
+function api(action, body) {
+  if (hasBridge) {
+    try { const r = JSON.parse(window.TypeG.call(action, JSON.stringify(body || {}))); if (r && r.error) throw new Error(r.error); return r; }
+    catch (e) { toast(errText(e.message)); return null; }
+  }
+  return MOCK(action, body);
+}
+function errText(code) {
+  const m = {
+    PROTECTED: t('المخرج محمي — شيل الحماية الأول', 'Outlet is protected — remove the lock first'),
+    DEVICE_DISCONNECTED: t('المشترك مش متصل', 'Strip is not connected'),
+    WIFI_REQUIRED: t('فعّل الواي فاي', 'Turn on Wi-Fi')
+  };
+  return m[code] || t('حصل خطأ', 'Something went wrong');
+}
 
- if(a==='edit')return editOutlet(+b.channel);
- if(a==='saveMeta'){if(!$('deviceType').value)return toast(t('اختار نوع الجهاز الأول','Choose a device type first'));if(api('meta',payload({channel:+$('channel').value,name:$('name').value,room:$('room').value,type:$('deviceType').value,keepConnected:$('keepConnected').checked,sleepMode:$('sleepMode').checked,lowMinutes:+$('lowMinutes').value}))){closeModal();refresh();draw()}return}
- 
- if(a==='selectAll'){chosen=chosen.size===4?new Set():new Set([1,2,3,4]);draw();return}
- if(a==='selectedControl'){if(!chosen.size)return toast(t('حدد مخرج واحد على الأقل','Select at least one outlet'));if(confirm(t('تنفيذ الأمر على المخارج المحددة فقط؟','Apply to selected outlets only?')))group(b.state,[...chosen]);refresh();return}
- if(a==='globalControl'){if(confirm(b.state==='on'?t('تشغيل كل المخارج المسجلة؟ المخارج بدون نوع محدد مش هتشتغل.','Turn on all registered outlets? Unconfigured outlets will stay off.'):t('فصل كل المخارج المسجلة؟','Turn off all registered outlets?')))for(const d of S.devices||[])group(b.state,[1,2,3,4],d);refresh();return}
- if(a==='themeForm'){themePreview={themeMode:S.themeMode||'system',palette:S.palette||'mint'};modal(`<h2>${t('اختار مظهرك','Choose your look')}</h2>${select('themeMode',t('الوضع','Mode'),[['system',t('حسب إعداد الموبايل','Follow system')],['light',t('فاتح','Light')],['dark',t('داكن','Dark')]])}${select('palette',t('مجموعة الألوان','Color palette'),[['mint',t('نعناعي','Mint')],['blue',t('أزرق','Blue')],['purple',t('بنفسجي','Purple')],['orange',t('برتقالي','Orange')]])}<div class="theme-sample card"><h3>Type-G Smart</h3><p>${t('معاينة مباشرة للألوان والخط والخلفية','Live preview of colors, text and background')}</p><span class="tag">${t('تشغيل','On')} / ${t('فصل','Off')}</span></div><p class="muted">${t('حالة المخرج ثابتة: أخضر شغال، أحمر مطفي، رمادي غير معروف.','Outlet states stay green for ON, red for OFF, gray for unknown.')}</p>${button(t('حفظ المظهر','Save appearance'),'themeSave',{},'wide')}${button(t('رجوع للافتراضي','Restore defaults'),'themeDefault',{},'quiet wide')}`);$('themeMode').value=themePreview.themeMode;$('palette').value=themePreview.palette;return}
- if(a==='themeDefault'){$('themeMode').value='system';$('palette').value='mint';themePreview={themeMode:'system',palette:'mint'};applyTheme(themePreview);return}
- if(a==='themeSave'){if(api('settings',themePreview)){themePreview=null;closeModal();refresh();draw()}return}
- if(a==='close'&&themePreview){themePreview=null;applyTheme(S)}
- if(a==='resetLearning'){if(confirm(t('مسح النمط المتعلم للمخرج وبدء تعلم جديد؟','Clear this outlet’s learned pattern and start again?'))){api('resetLearning',payload({channel:+b.channel}));refresh();draw()}return}
- v2Act(a,b);
-};
-document.addEventListener('change',e=>{const x=e.target;if(x.classList.contains('outlet-select')){x.checked?chosen.add(+x.dataset.channel):chosen.delete(+x.dataset.channel);$('selectionCount').textContent=chosen.size;return}if(x.dataset.setting){if(api('settings',{[x.dataset.setting]:x.checked})){refresh(false)}else x.checked=!x.checked;return}if(x.id==='appLanguage'){api('settings',{lang:x.value});refresh(false);draw()}if(x.id==='refreshRate'){api('settings',{pollSeconds:+x.value});refresh(false)}if(x.id==='volume'){api('settings',{soundVolume:+x.value});refresh(false)}if(x.id==='themeMode'||x.id==='palette'){themePreview={themeMode:$('themeMode').value,palette:$('palette').value};applyTheme(themePreview)}});
-$('sheet').addEventListener('close',()=>{if(themePreview){themePreview=null;applyTheme(S)}});
-// Native BACK closes the preview without saving, just like the visible Back button.
-window.goBack=()=>{if($('sheet').open)closeModal();else if(setup&&step>1){step--;draw()}else{setup=false;tab='home';draw()}};
-refresh(false);draw();
+/* ---------- mock for preview without a device ---------- */
+let _mock = null;
+function MOCK(action, b) {
+  if (!_mock) _mock = {
+    running: true, haConfigured: false, lang: LANG, themeMode: 'system',
+    tariff: { rate: 2.15 }, homeSSID: 'Home-WiFi',
+    devices: [{ mac: 'DEMO01', name: t('مشترك المكتب', 'Office strip'), online: true, outlets: [
+      { channel: 1, name: t('الكمبيوتر', 'Computer'), room: '', state: 'on', watts: 142.5, wh: 480, cost: 1.03, protected: false },
+      { channel: 2, name: t('الشاشة', 'Monitor'), room: '', state: 'on', watts: 28.0, wh: 95, cost: 0.2, protected: false },
+      { channel: 3, name: t('الراوتر', 'Router'), room: '', state: 'on', watts: 9.3, wh: 30, cost: 0.06, protected: true },
+      { channel: 4, name: t('الشاحن', 'Charger'), room: '', state: 'off', watts: 0, wh: 12, cost: 0.02, protected: false }
+    ]}]
+  };
+  const dev = _mock.devices[0];
+  const out = ch => dev.outlets.find(o => o.channel === ch);
+  switch (action) {
+    case 'state': _mock.lang = LANG; return JSON.parse(JSON.stringify(_mock));
+    case 'control': { const o = out(b.channel); if (o) { o.state = b.state; o.watts = b.state === 'on' ? (10 + Math.random()*120) : 0; } return { ok: true }; }
+    case 'groupControl': dev.outlets.forEach(o => { o.state = b.state; o.watts = b.state === 'on' ? 20 : 0; }); return { ok: true };
+    case 'allOff': dev.outlets.forEach(o => { o.state = 'off'; o.watts = 0; }); return { ok: true };
+    case 'saveMeta': { const o = out(b.channel); if (o) { if ('name' in b) o.name = b.name; if ('protected' in b) o.protected = !!b.protected; } return { ok: true }; }
+    case 'saveTariff': _mock.tariff = { rate: parseFloat(b.rate) || 0 }; return { ok: true };
+    case 'haStatus': return { configured: _mock.haConfigured, url: _mock.haUrl || '', connected: _mock.haConfigured };
+    case 'haSave': _mock.haUrl = b.url; _mock.haConfigured = !!b.url; return { ok: true };
+    case 'settings': if ('themeMode' in b) _mock.themeMode = b.themeMode; return { ok: true };
+    case 'timer': { const o = out(b.channel); if (o) { if (b.seconds > 0) o.timer = { seconds: b.seconds, state: b.state }; else delete o.timer; } return { ok: true }; }
+    case 'history': { const pts = []; for (let i=0;i<24;i++) pts.push({ w: 40+Math.random()*120 }); return { points: pts }; }
+    default: return { ok: true };
+  }
+}
 
-function showTierPrice(){const tier=+$('meterTier').value,r=(S.tariffCatalog||[]).find(x=>x.tier===tier);$('tierPrice').textContent=(r?Number(r.price).toFixed(2):Number(S.tariff||0).toFixed(2))+' EGP / kWh';$('tierSource').textContent=r?(r.official?t('مصدر رسمي — أبريل ٢٠٢٦','Official source — April 2026'):t('سعر إرشادي منشور — غير مؤكد كتعريفة حالية','Published indicative price — not confirmed as current')):t('السعر السابق محفوظ بدون تغيير','Prior price retained unchanged')}
-document.addEventListener('change',e=>{if(e.target.id==='meterTier')showTierPrice()});
+/* ---------- app state ---------- */
+let S = {}, tab = 'home';
 
-function licenseCard(){const l=S.license||{};return `<section class="card"><h2>${t('تفعيل البرنامج','App activation')}</h2><p class="success">${t('مفعّل لهذا التثبيت بدون تاريخ انتهاء','Activated for this installation — no expiry')}</p><p>${esc(l.name||'')}</p><small class="code">${esc((l.deviceId||'').slice(0,16))}</small><p class="help">${t('التحديث بيحافظ على التفعيل. حذف التطبيق أو مسح بياناته يحتاج تفعيل جديد.','Updates preserve activation. Uninstalling or clearing app data requires a new activation.')}</p>${button(t('فتح بوت التفعيل','Open activation bot'),'licenseBot',{},'quiet wide')}${button(t('مشاركة طلب التفعيل','Share activation request'),'licenseShare',{},'quiet wide')}${button(t('استيراد ترخيص','Import license'),'licenseImport',{},'quiet wide')}</section>`}
-function drawActivation(){document.body.classList.remove('terms-mode');const l=S.license||{};$('nav').innerHTML='';$('main').innerHTML=`<h1>${t('نفعّل Type-G Smart','Activate Type-G Smart')}</h1><section class="card"><p>${t('التفعيل مرة واحدة لهذا التثبيت، وبعدها البرنامج يشتغل بدون سيرفر أو إنترنت.','Activate this installation once, then use the app without a server or internet.')}</p><ol><li>${t('افتح بوت التفعيل واضغط Start، ثم شارك ملف الطلب مع البوت.','Open the activation bot and press Start, then share your request file with the bot.')}</li><li>${t('بعد موافقة George Emad، البوت هيبعت ملف ترخيص لهذا التثبيت.','After George Emad approves, the bot sends a license for this installation.')}</li><li>${t('اختار استيراد الترخيص وافتح الملف.','Choose Import license and open the file.')}</li></ol>${button(t('١ · فتح بوت التفعيل','1 · Open activation bot'),'licenseBot',{},'wide')}${l.ready?button(t('٢ · مشاركة طلب التفعيل','2 · Share activation request'),'licenseShare',{},'wide'):`<p>${t('جاري تجهيز مفتاح الهاتف…','Preparing your phone key…')}</p>`}<p class="help">${t('في قائمة المشاركة اختار Telegram، ثم ابحث عن TypeGSmart_George_bot وابعت الملف.','In the share sheet choose Telegram, then find TypeGSmart_George_bot and send the file.')}</p>${l.ready?button(t('حفظ الطلب كملف بدل المشاركة','Save request as a file'),'licenseExport',{},'quiet wide'):''}${l.ready?button(t('٣ · استيراد الترخيص','3 · Import license'),'licenseImport',{},'quiet wide'):''}<p class="code">t.me/TypeGSmart_George_bot</p><p class="help">${t('مفتاح الهاتف الخاص لا يخرج من Android Keystore. الطلب يحتوي على المفتاح العام ومعرّف التثبيت وموديل الهاتف، وبصمة الاستعادة الاختيارية لو وافقت عليها.','The private phone key stays in Android Keystore. The request contains its public key, installation ID, phone model and optional recovery fingerprint if you consent.')}</p>${l.error?`<p class="error">${t('تعذر التحقق من المفتاح أو الترخيص. اقفل وافتح التطبيق، أو ابعت طلب تفعيل جديد للمالك.','The key or license could not be verified. Restart the app, or send a new request to the owner.')}</p>`:''}<p class="code license-id">${esc(l.deviceId||'')}</p></section><section class="card">${button(ar()?'English':'العربية','licenseLanguage',{},'quiet wide')}<p class="help">${t('تثبيت النسخة كتحديث يحافظ على بياناتك. ما تمسحش النسخة القديمة. أول تفعيل للنسخة المحمية مطلوب حتى على تليفون المطوّر.','Install as an update to preserve your data. Do not uninstall the old app. The first protected release requires activation, including the developer’s phone.')}</p><p class="help">${t('عدم التفعيل لا يغيّر وضع مخارج المشترك؛ التحكم والمؤقتات تحتاج تطبيقًا مفعّلًا ومتصلًا.','An inactive license never changes the physical outlets. Controls and timers require an activated, connected app.')}</p></section>`}
-const activatedAct=act;
-act=function(a,b={}){if(a==='licenseLanguage'){api('activationLanguage',{lang:ar()?'en':'ar'});refresh(false);draw();return}if(['licenseExport','licenseImport','licenseBot','licenseShare'].includes(a)){api(a);return}return activatedAct(a,b)};
-window.onLicenseResult=function(error){if(error){toast(error==='LICENSE_OTHER_PHONE'?t('الترخيص ده لتثبيت أو موبايل تاني','This license is for another installation or phone'):t('تعذر استيراد الترخيص. اختار ملف الترخيص الصحيح.','Could not import the license. Choose the correct license file.'));return}refresh(false);setup=!S.onboarded;tab='home';draw();toast(t('تم التفعيل بنجاح','Activation complete'))};
-refresh(false);draw();
+/* ---------- helpers ---------- */
+const $ = id => document.getElementById(id);
+function toast(msg) { const el = $('toast'); el.textContent = msg; el.classList.add('show'); clearTimeout(toast._t); toast._t = setTimeout(() => el.classList.remove('show'), 2200); }
+function devices() { return (S.devices || []); }
+function stripDevices() { return devices().filter(d => d.mac !== 'HA'); }
+function haDevice() { return devices().find(d => d.mac === 'HA'); }
+function totalWatts() { return devices().flatMap(d => d.online ? (d.outlets||[]) : []).reduce((s,o)=>s+(+o.watts||0),0); }
 
-window.onActivationShareError=function(){toast(t("تعذر فتح المشاركة أو البوت. احفظ الطلب كملف وابعته من Telegram إلى TypeGSmart_George_bot.","Could not open sharing or the bot. Save the request and send it in Telegram to TypeGSmart_George_bot."))};
+/* ---------- strip illustration (physical order 1..4 + 2 USB) ---------- */
+function stripSVG(dev) {
+  const o = ch => (dev.outlets || []).find(x => x.channel === ch) || {};
+  const W = 520, H = 190, pad = 28, n = 4;
+  const gap = (W - pad*2) / n, r = 34;
+  let sockets = '';
+  for (let i = 0; i < n; i++) {
+    const ch = i + 1, oo = o(ch), on = oo.state === 'on';
+    const cx = pad + gap*i + gap/2, cy = 84;
+    const ring = on ? 'var(--mint)' : 'var(--socket-off)';
+    sockets += `
+      <g class="sockhit" data-ch="${ch}">
+        ${on ? `<circle cx="${cx}" cy="${cy}" r="${r+12}" fill="var(--glow)" opacity="0.5"/>` : ''}
+        <circle cx="${cx}" cy="${cy}" r="${r}" fill="var(--socket)" stroke="${ring}" stroke-width="5"/>
+        <circle cx="${cx-11}" cy="${cy-4}" r="4.3" fill="${on?'var(--mint)':'var(--faint)'}"/>
+        <circle cx="${cx+11}" cy="${cy-4}" r="4.3" fill="${on?'var(--mint)':'var(--faint)'}"/>
+        <rect x="${cx-4}" y="${cy+8}" width="8" height="12" rx="3" fill="${on?'var(--mint)':'var(--faint)'}"/>
+        <text x="${cx}" y="${cy+r+26}" text-anchor="middle" font-size="19" font-weight="700" fill="var(--fg)">${ch}</text>
+        ${oo.protected ? `<text x="${cx+r-6}" y="${cy-r+2}" text-anchor="middle" font-size="16">🔒</text>` : ''}
+      </g>`;
+  }
+  // 2 USB جوه جسم المشترك (مش بيتحكم فيها)
+  const usb = `
+    <text x="462" y="140" text-anchor="middle" font-size="10" fill="var(--faint)">USB</text>
+    <rect x="446" y="146" width="15" height="8" rx="2" fill="var(--faint)"/>
+    <rect x="465" y="146" width="15" height="8" rx="2" fill="var(--faint)"/>`;
+  return `<svg class="strip" viewBox="0 0 ${W} ${H}" role="img" aria-label="${t('شكل المشترك','Power strip')}">
+    <rect x="8" y="34" width="${W-16}" height="120" rx="26" fill="var(--surface2)" stroke="var(--line)" stroke-width="2"/>
+    <rect x="${W-12}" y="78" width="16" height="32" rx="5" fill="var(--line)"/>
+    ${sockets}${usb}
+  </svg>`;
+}
+
+/* ---------- screens ---------- */
+function render() {
+  drawNav();
+  const v = $('view');
+  const conn = $('conn');
+  const anyOnline = stripDevices().some(d => d.online) || (haDevice() && haDevice().online);
+  conn.textContent = anyOnline ? t('متصل','Connected') : t('مفيش مشترك متصل','No strip connected');
+  conn.className = anyOnline ? 'live' : 'dead';
+  if (tab === 'home') v.innerHTML = viewHome();
+  else if (tab === 'outlets') v.innerHTML = viewOutlets();
+  else if (tab === 'energy') v.innerHTML = viewEnergy();
+  else v.innerHTML = viewSettings();
+  afterRender();
+}
+
+function viewHome() {
+  const total = totalWatts();
+  const sd = stripDevices();
+  let strips = sd.map(d => `
+    <section class="block stripwrap" data-mac="${esc(d.mac)}">
+      <div class="cap"><b>${esc(d.name||'Type-G')}</b><span>${d.online?t('يعمل','online'):t('غير متصل','offline')}</span></div>
+      ${stripSVG(d)}
+    </section>`).join('');
+  if (!sd.length) strips = `<section class="block card"><div class="empty">
+     ${t('لسه مفيش مشترك متصل. وصّل الموبايل بواي فاي البيت وافتح المشترك.','No strip yet. Connect your phone to home Wi-Fi and power the strip.')}
+    </div></section>`;
+  const ha = haDevice();
+  const haLine = ha ? `<div class="hero"><div class="cap"></div></div>` : '';
+  return `
+    <h1 class="page">${t('أهلاً بيك','Welcome')}</h1>
+    <p class="sub">${t('تحكم محلي مباشر من موبايلك','Local control, straight from your phone')}</p>
+    <section class="block hero">
+      <div class="big"><b>${total.toFixed(1)}</b><span class="unit">W</span></div>
+      <div class="meta">
+        <span>${stripDevices().filter(d=>d.online).length} ${t('مشترك متصل','strips online')}</span>
+        <span>${S.running?t('الخدمة شغالة','service running'):t('الخدمة متوقفة','service stopped')}</span>
+      </div>
+    </section>
+    <div class="btnrow">
+      <button class="b pri" data-act="allOn">${t('تشغيل الكل','All on')}</button>
+      <button class="b danger" data-act="allOff">${t('فصل الكل','All off')}</button>
+    </div>
+    ${strips}
+    ${ha ? haBlock(ha) : ''}`;
+}
+
+function outletRow(mac, o) {
+  const on = o.state === 'on';
+  const w = (+o.watts||0).toFixed(1);
+  const sub = on ? `<small class="w">${w} W</small>` : `<small>${t('مفصول','off')}</small>`;
+  return `<div class="row ${on?'on':''}">
+    <div class="idx">${o.channel}</div>
+    <div class="info">
+      <b>${esc(o.name||('Outlet '+o.channel))} ${o.protected?'<span class="lock">🔒</span>':''}</b>
+      ${sub} ${o.timer?('· <small>⏱ '+Math.round((o.timer.seconds||0)/60)+'m</small>'):''}
+    </div>
+    <button class="iconbtn" data-edit="${mac}|${o.channel}" aria-label="${t('تعديل','Edit')}">⋯</button>
+    <button class="sw ${on?'on':''} ${o.pending?'pending':''}" data-toggle="${mac}|${o.channel}|${on?'off':'on'}" aria-label="${esc(o.name)}"></button>
+  </div>`;
+}
+
+function viewOutlets() {
+  const sd = stripDevices();
+  if (!sd.length) return `<h1 class="page">${t('المخارج','Outlets')}</h1><section class="block card"><div class="empty">${t('مفيش مشترك متصل','No strip connected')}</div></section>`;
+  return `<h1 class="page">${t('المخارج','Outlets')}</h1>
+    <p class="sub">${t('اضغط على المخرج في الصورة أو المفتاح','Tap a socket in the picture or a switch')}</p>
+    ${sd.map(d => `
+      <section class="block stripwrap"><div class="cap"><b>${esc(d.name||'Type-G')}</b>
+        <span>${d.online?t('يعمل','online'):t('غير متصل','offline')}</span></div>
+        ${stripSVG(d)}
+      </section>
+      <section class="block card">${(d.outlets||[]).map(o=>outletRow(d.mac,o)).join('')}</section>
+      <div class="btnrow">
+        <button class="b pri" data-group="${d.mac}|on">${t('تشغيل كل المخارج','All on')}</button>
+        <button class="b danger" data-group="${d.mac}|off">${t('فصل الكل','All off')}</button>
+      </div>`).join('')}`;
+}
+
+function haBlock(ha) {
+  return `<h2 class="hd">Home Assistant</h2>
+    <section class="block card">${(ha.outlets||[]).length?(ha.outlets||[]).map(o=>outletRow('HA',o)).join('')
+      :`<div class="empty">${ha.online?t('مفيش سويتشات','No switches found'):t('مش متصل بـ HA','Not connected to HA')}</div>`}</section>`;
+}
+
+function viewEnergy() {
+  const sd = stripDevices();
+  const rate = (S.tariff && +S.tariff.rate) || 0;
+  if (!sd.length) return `<h1 class="page">${t('الطاقة','Energy')}</h1><section class="block card"><div class="empty">${t('مفيش بيانات بعد','No data yet')}</div></section>`;
+  let body = sd.map(d => {
+    const outs = d.outlets||[];
+    const wh = outs.reduce((s,o)=>s+(+o.wh||0),0), cost = outs.reduce((s,o)=>s+(+o.cost||0),0);
+    const maxw = Math.max(1, ...outs.map(o=>+o.watts||0));
+    return `<section class="block card" data-mac="${esc(d.mac)}"><div class="row"><div class="info">
+        <b>${esc(d.name||'Type-G')}</b><small>${(wh/1000).toFixed(2)} kWh · ${cost.toFixed(2)} ${t('جنيه','EGP')} ${t('اليوم','today')}</small>
+      </div></div>
+      <div class="row" data-barsfor="${esc(d.mac)}"><div class="info"><div class="bars" data-bars='${encodeURIComponent(JSON.stringify(outs.map(o=>({l:o.channel,w:+o.watts||0}))))}' data-max="${maxw}"></div></div></div>
+      ${outs.map(o=>`<div class="kv"><span>${esc(o.name||('Outlet '+o.channel))}</span><b>${(+o.watts||0).toFixed(1)} W · ${((+o.wh||0)/1000).toFixed(3)} kWh</b></div>`).join('')}
+    </section>`;
+  }).join('');
+  return `<h1 class="page">${t('الطاقة','Energy')}</h1>
+    <p class="sub">${t('تعريفة الكهرباء','Electricity tariff')}: ${rate?(rate+' '+t('جنيه/كيلوواط','EGP/kWh')):t('مش متحددة','not set')}</p>
+    ${body}
+    <div class="btnrow"><button class="b wide" data-act="tariff">${t('ضبط التعريفة','Set tariff')}</button></div>
+    <p class="sub">${t('قراءة الواط من المشترك تقريبية ولسه بنتأكد من دقتها.','Watt readings from the strip are approximate and still being verified.')}</p>`;
+}
+
+function viewSettings() {
+  const ha = api('haStatus') || {};
+  return `<h1 class="page">${t('الإعدادات','Settings')}</h1>
+    <h2 class="hd">Home Assistant</h2>
+    <section class="block card"><div class="row"><div class="info">
+        <b>${ha.configured?(ha.connected?t('متصل ✓','Connected ✓'):t('محفوظ — مش متصل','Saved — not connected')):t('مش مربوط','Not linked')}</b>
+        <small>${esc(ha.url||t('اربط عشان تتحكم في أجهزة HA','Link to control HA devices'))}</small>
+      </div><button class="iconbtn" data-act="ha">⋯</button></div></section>
+
+    <h2 class="hd">${t('الكهرباء','Power')}</h2>
+    <section class="block card">
+      <div class="row"><div class="info"><b>${t('تعريفة الكهرباء','Tariff')}</b><small>${(S.tariff&&S.tariff.rate)?S.tariff.rate+' '+t('جنيه/كيلوواط','EGP/kWh'):t('مش متحددة','not set')}</small></div><button class="iconbtn" data-act="tariff">⋯</button></div>
+      <div class="row"><div class="info"><b>${t('إيقاظ الكمبيوتر','Wake computer')}</b><small>Wake-on-LAN</small></div><button class="iconbtn" data-act="wake">⋯</button></div>
+    </section>
+
+    <h2 class="hd">${t('المظهر','Appearance')}</h2>
+    <section class="block card">
+      <div class="row"><div class="info"><b>${t('الوضع','Theme')}</b></div>
+        <div class="chips">
+          ${['system','dark','light'].map(m=>`<button class="chip ${(localStorage.getItem('theme')||'system')===m?'sel':''}" data-theme="${m}">${t({system:'تلقائي',dark:'غامق',light:'فاتح'}[m],{system:'Auto',dark:'Dark',light:'Light'}[m])}</button>`).join('')}
+        </div>
+      </div>
+      <div class="row"><div class="info"><b>${t('اللغة','Language')}</b></div>
+        <div class="chips">
+          <button class="chip ${AR()?'sel':''}" data-setlang="ar">العربية</button>
+          <button class="chip ${!AR()?'sel':''}" data-setlang="en">English</button>
+        </div>
+      </div>
+    </section>
+
+    <h2 class="hd">${t('عن','About')}</h2>
+    <section class="block card"><div class="kv"><span>${t('المشترك','Strip')}</span><b>MTTL-W01</b></div>
+      <div class="kv"><span>${t('الإصدار','Version')}</span><b>1.2.1</b></div>
+      ${hasBridge?'':`<div class="kv"><span>${t('وضع المعاينة','Preview mode')}</span><b>${t('بيانات تجريبية','demo data')}</b></div>`}</section>`;
+}
+
+/* ---------- sheets ---------- */
+function openSheet(html) { $('sheet-body').innerHTML = html; $('sheet').hidden = false; }
+function closeSheet() { $('sheet').hidden = true; }
+
+function sheetEdit(mac, ch) {
+  const d = devices().find(x => x.mac === mac); if (!d) return;
+  const o = (d.outlets||[]).find(x => x.channel === ch); if (!o) return;
+  const ha = mac === 'HA';
+  openSheet(`<h3>${t('المخرج','Outlet')} ${ch}</h3>
+    <label class="f">${t('الاسم','Name')}</label>
+    <input class="in" id="e-name" value="${esc(o.name||'')}" ${ha?'disabled':''}>
+    ${ha?'':`<div class="row"><div class="info"><b>${t('مخرج محمي','Protected')}</b><small>${t('ميتفصلش بالغلط','Stays on')}</small></div>
+      <button class="sw ${o.protected?'on':''}" id="e-prot"></button></div>`}
+    <h2 class="hd">${t('مؤقت','Timer')}</h2>
+    <div class="chips" id="e-timer">
+      ${[['5',t('٥ دقائق','5m')],['30',t('٣٠ دقيقة','30m')],['60',t('ساعة','1h')],['120',t('ساعتين','2h')]].map(([m,l])=>`<button class="chip" data-tmin="${m}">${l}</button>`).join('')}
+      <button class="chip" data-tmin="0">${t('إلغاء المؤقت','Cancel')}</button>
+    </div>
+    <p class="sub">${t('المؤقت هيفصل المخرج بعد المدة.','Timer turns the outlet off after the time.')}</p>
+    <div class="btnrow"><button class="b pri wide" id="e-save">${t('حفظ','Save')}</button></div>`);
+  if (!ha) $('e-prot').onclick = e => e.currentTarget.classList.toggle('on');
+  $('e-timer').onclick = e => { const b = e.target.closest('[data-tmin]'); if (!b) return;
+    const min = +b.dataset.tmin;
+    api('timer', { mac, channel: ch, seconds: min*60, state: 'off' });
+    toast(min?t('اتضبط المؤقت','Timer set'):t('اتلغى المؤقت','Timer cancelled')); closeSheet(); refresh(); };
+  $('e-save').onclick = () => {
+    const body = { mac, channel: ch, name: $('e-name').value };
+    if (!ha) body.protected = $('e-prot').classList.contains('on');
+    api('saveMeta', body); toast(t('اتحفظ','Saved')); closeSheet(); refresh();
+  };
+}
+
+function sheetTariff() {
+  openSheet(`<h3>${t('تعريفة الكهرباء','Electricity tariff')}</h3>
+    <label class="f">${t('سعر الكيلوواط (جنيه)','Price per kWh (EGP)')}</label>
+    <input class="in" id="ta" inputmode="decimal" value="${esc((S.tariff&&S.tariff.rate)||'')}" placeholder="2.15">
+    <div class="btnrow"><button class="b pri wide" id="ta-save">${t('حفظ','Save')}</button></div>`);
+  $('ta-save').onclick = () => { api('saveTariff', { rate: $('ta').value }); toast(t('اتحفظ','Saved')); closeSheet(); refresh(); };
+}
+
+function sheetWake() {
+  const w = S.wakeConfig || {};
+  openSheet(`<h3>${t('إيقاظ الكمبيوتر','Wake computer')} · Wake-on-LAN</h3>
+    <label class="f">MAC</label><input class="in" id="w-mac" value="${esc(w.mac||'')}" placeholder="AA:BB:CC:DD:EE:FF" dir="ltr">
+    <label class="f">${t('عنوان البث (اختياري)','Broadcast (optional)')}</label><input class="in" id="w-bc" value="${esc(w.broadcast||'')}" placeholder="255.255.255.255" dir="ltr">
+    <div class="btnrow"><button class="b" id="w-save">${t('حفظ','Save')}</button><button class="b pri" id="w-now">${t('أيقظ دلوقتي','Wake now')}</button></div>`);
+  $('w-save').onclick = () => { api('wakeSave', { mac: $('w-mac').value, broadcast: $('w-bc').value }); toast(t('اتحفظ','Saved')); closeSheet(); };
+  $('w-now').onclick = () => { api('wakeSave', { mac: $('w-mac').value, broadcast: $('w-bc').value }); api('wakeNow', {}); toast(t('اتبعت','Sent')); };
+}
+
+function sheetHA() {
+  const st = api('haStatus') || {};
+  openSheet(`<h3>${t('ربط Home Assistant','Link Home Assistant')}</h3>
+    <label class="f">${t('عنوان HA','HA address')}</label>
+    <input class="in" id="ha-url" value="${esc(st.url||'')}" placeholder="http://192.168.1.50:8123" dir="ltr">
+    <label class="f">Long-Lived Access Token</label>
+    <input class="in" id="ha-tok" placeholder="${t('الصق التوكن','Paste token')}" dir="ltr">
+    <div class="btnrow"><button class="b pri wide" id="ha-save">${t('حفظ وفحص','Save & test')}</button></div>
+    <p class="sub">${t('من HA: بروفايلك ← Long-Lived Access Tokens ← Create Token','In HA: your profile → Long-Lived Access Tokens → Create Token')}</p>
+    <div id="ha-msg" class="sub"></div>`);
+  $('ha-save').onclick = () => {
+    api('haSave', { url: $('ha-url').value, token: $('ha-tok').value });
+    $('ha-msg').textContent = t('بيفحص…','Testing…');
+    setTimeout(() => { const r = api('haStatus') || {}; $('ha-msg').textContent = r.connected ? t('اتصل بنجاح ✓','Connected ✓') : t('اتحفظ بس مفيش اتصال — راجع العنوان/التوكن','Saved but not connected — check address/token'); refresh(); }, 1200);
+  };
+}
+
+/* ---------- actions ---------- */
+function afterRender() {
+  // bars heights (avoid inline style in markup; set via JS)
+  document.querySelectorAll('.bars[data-bars]').forEach(b => {
+    const data = JSON.parse(decodeURIComponent(b.dataset.bars)); const max = +b.dataset.max || 1;
+    b.innerHTML = data.map(x => `<div><div class="bar"></div><div class="bl">${x.l}</div></div>`).join('');
+    b.querySelectorAll('.bar').forEach((el,i) => { el.style.height = Math.max(4, (data[i].w/max)*70) + 'px'; });
+  });
+}
+
+document.addEventListener('click', e => {
+  const tg = e.target.closest('[data-toggle]');
+  if (tg) { const [mac,ch,to] = tg.dataset.toggle.split('|'); tg.classList.add('pending');
+    const r = api('control', { mac, channel:+ch, state:to }); if (r) setTimeout(refresh, 350); else refresh(); return; }
+  const sk = e.target.closest('.sockhit');
+  if (sk) { const mac = sk.closest('[data-mac]')?.dataset.mac || stripDevices()[0]?.mac; const ch = +sk.dataset.ch;
+    const dev = devices().find(d=>d.mac===mac); const o = dev && (dev.outlets||[]).find(x=>x.channel===ch);
+    if (o) { api('control', { mac, channel:ch, state:o.state==='on'?'off':'on' }); setTimeout(refresh,350);} return; }
+  const ed = e.target.closest('[data-edit]'); if (ed) { const [mac,ch] = ed.dataset.edit.split('|'); sheetEdit(mac,+ch); return; }
+  const gp = e.target.closest('[data-group]'); if (gp) { const [mac,st] = gp.dataset.group.split('|'); api('groupControl',{mac,state:st}); setTimeout(refresh,350); return; }
+  const th = e.target.closest('[data-theme]'); if (th) { applyTheme(th.dataset.theme); api('settings',{themeMode:th.dataset.theme}); render(); return; }
+  const sl = e.target.closest('[data-setlang]'); if (sl) { LANG = sl.dataset.setlang; localStorage.setItem('lang',LANG); document.documentElement.lang=LANG; document.documentElement.dir=AR()?'rtl':'ltr'; $('lang').textContent=AR()?'EN':'ع'; render(); return; }
+  const ac = e.target.closest('[data-act]'); if (ac) { const a = ac.dataset.act;
+    if (a==='allOff') { api('allOff',{}); setTimeout(refresh,350);} 
+    else if (a==='allOn') { stripDevices().forEach(d=>api('groupControl',{mac:d.mac,state:'on'})); setTimeout(refresh,350);} 
+    else if (a==='tariff') sheetTariff(); else if (a==='wake') sheetWake(); else if (a==='ha') sheetHA(); return; }
+  if (e.target.id === 'sheet') closeSheet();
+});
+
+/* ---------- nav ---------- */
+function drawNav() {
+  const items = [
+    ['home', t('الرئيسية','Home'), 'M3 11l9-8 9 8M5 10v10h14V10'],
+    ['outlets', t('المخارج','Outlets'), 'M6 3v6a6 6 0 0012 0V3M9 3v4M15 3v4M12 15v6'],
+    ['energy', t('الطاقة','Energy'), 'M13 2L4 14h7l-1 8 9-12h-7z'],
+    ['settings', t('الإعدادات','Settings'), 'M12 15a3 3 0 100-6 3 3 0 000 6zM19 12l2 1-2 4-2-1a7 7 0 01-2 1l-1 2h-4l-1-2a7 7 0 01-2-1l-2 1-2-4 2-1a7 7 0 010-2l-2-1 2-4 2 1a7 7 0 012-1l1-2h4l1 2a7 7 0 012 1l2-1 2 4-2 1a7 7 0 010 2z']
+  ];
+  $('nav').innerHTML = items.map(([k,label,p]) =>
+    `<button data-nav="${k}" class="${tab===k?'sel':''}"><svg viewBox="0 0 24 24"><path d="${p}"/></svg>${label}</button>`).join('');
+}
+$('nav').addEventListener('click', e => { const b = e.target.closest('[data-nav]'); if (b) { tab = b.dataset.nav; render(); } });
+$('lang').addEventListener('click', () => { LANG = AR()?'en':'ar'; localStorage.setItem('lang',LANG); document.documentElement.lang=LANG; document.documentElement.dir=AR()?'rtl':'ltr'; $('lang').textContent=AR()?'EN':'ع'; render(); });
+
+/* ---------- theme ---------- */
+function applyTheme(mode) {
+  localStorage.setItem('theme', mode);
+  if (mode === 'system') document.documentElement.removeAttribute('data-theme');
+  else document.documentElement.setAttribute('data-theme', mode);
+}
+
+/* ---------- loop ---------- */
+function refresh() { const s = api('state'); if (s) { S = s; if (S.lang && !localStorage.getItem('lang')) LANG = S.lang; render(); } }
+function boot() {
+  applyTheme(localStorage.getItem('theme') || 'system');
+  document.documentElement.lang = LANG; document.documentElement.dir = AR()?'rtl':'ltr';
+  $('lang').textContent = AR()?'EN':'ع';
+  if (hasBridge) api('start', {});
+  refresh();
+  setInterval(() => { if (!document.hidden) refresh(); }, 3000);
+}
+window.goBack = () => { if (!$('sheet').hidden) { closeSheet(); return; } if (tab!=='home'){ tab='home'; render(); } };
+boot();

@@ -47,7 +47,9 @@ public class TypeGBridge {
                 if (HaClient.MAC.equals(mac)) {   // توجيه لـ Home Assistant
                     return ha.setByChannel(b.optInt("channel"), on) ? ok() : fail("DEVICE_DISCONNECTED");
                 }
-                boolean okc = eng().setOutlet(mac, b.optInt("channel"), on);
+                int ch = b.optInt("channel");
+                if (!on && eng().isProtected(mac, ch)) return fail("PROTECTED");
+                boolean okc = eng().setOutlet(mac, ch, on);
                 return okc ? ok() : fail("DEVICE_DISCONNECTED");
             }
             case "groupControl":  eng().groupControl(b.optString("mac"), "on".equals(b.optString("state"))); return ok();
@@ -155,24 +157,11 @@ public class TypeGBridge {
     }
 
     private JSONObject saveMeta(JSONObject b) {
-        JSONArray devs = eng().devicesJson();
         String mac = b.optString("mac");
         int ch = b.optInt("channel", -1);
-        for (int i = 0; i < devs.length(); i++) {
-            JSONObject d = devs.optJSONObject(i);
-            if (d == null || !mac.equals(d.optString("mac"))) continue;
-            if (b.has("stripName")) try { d.put("name", b.optString("stripName")); } catch (Exception ignore) {}
-            JSONArray outs = d.optJSONArray("outlets");
-            if (outs != null && ch > 0) for (int j = 0; j < outs.length(); j++) {
-                JSONObject o = outs.optJSONObject(j);
-                if (o != null && o.optInt("channel") == ch) {
-                    if (b.has("name")) try { o.put("name", b.optString("name")); } catch (Exception ignore) {}
-                    if (b.has("room")) try { o.put("room", b.optString("room")); } catch (Exception ignore) {}
-                    if (b.has("type")) try { o.put("type", b.optString("type")); } catch (Exception ignore) {}
-                }
-            }
-        }
-        prefs.setArr("devices", devs);
+        if (HaClient.MAC.equals(mac)) return ok();   // بيانات HA مش بتتخزّن هنا
+        if (b.has("stripName")) eng().setStripName(mac, b.optString("stripName"));
+        if (ch > 0) eng().updateOutletMeta(mac, ch, b);   // name/room/type/protected
         return ok();
     }
 

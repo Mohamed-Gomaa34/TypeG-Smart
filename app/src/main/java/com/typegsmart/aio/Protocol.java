@@ -13,6 +13,13 @@ public final class Protocol {
     public static final int PORT = 10086;
     public static final String EOL = "\r\n";
 
+    // المخرج الفعلي (1..4) ↔ قناة الفريموير. المجتمع: فعلي 1,2,3,4 = فريموير 2,3,4,1.
+    // (نقطة واحدة للتعديل لو اختلفت نسخة الفريموير.)
+    private static final int[] FW_OF  = {0, 2, 3, 4, 1}; // index = physical
+    private static final int[] PHY_OF = {0, 4, 1, 2, 3}; // index = firmware
+    public static int fwChannel(int physical) { return (physical >= 1 && physical <= 4) ? FW_OF[physical] : physical; }
+    public static int physicalChannel(int firmware) { return (firmware >= 1 && firmware <= 4) ? PHY_OF[firmware] : firmware; }
+
     // أوامر صادرة للمشترك
     public static String connect(String arg)      { return "up:connect:" + arg; }
     public static String getInfoAll()             { return "up:getinfo:all"; }
@@ -35,10 +42,10 @@ public final class Protocol {
 
     public static final String INFO_PREFIX = "up:getinfo:";
 
-    /** قراءة مخرج واحد من رد getinfo. */
+    /** قراءة مخرج واحد من رد getinfo. channel = قناة الفريموير. fields = الـ12 حقل الخام. */
     public static final class Reading {
-        public final int channel; public final boolean on; public final double watts;
-        public Reading(int ch, boolean on, double w){ channel=ch; this.on=on; watts=w; }
+        public final int channel; public final boolean on; public final double watts; public final String[] fields;
+        public Reading(int ch, boolean on, double w, String[] f){ channel=ch; this.on=on; watts=w; fields=f; }
     }
 
     /**
@@ -60,7 +67,7 @@ public final class Protocol {
             boolean on = "on".equals(f[1]);
             double w = 0;
             if (f[5].matches("[0-9]{1,9}")) w = Long.parseLong(f[5]) / 1000.0;
-            out.add(new Reading(ch, on, w));
+            out.add(new Reading(ch, on, w, f));
         }
         return out;
     }

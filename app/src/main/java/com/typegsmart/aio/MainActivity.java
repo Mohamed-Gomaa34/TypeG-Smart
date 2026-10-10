@@ -41,19 +41,6 @@ public class MainActivity extends AppCompatActivity {
             @Override public WebResourceResponse shouldInterceptRequest(WebView v, WebResourceRequest req) {
                 return loader.shouldInterceptRequest(req.getUrl());
             }
-            @Override public void onPageFinished(WebView v, String url) {
-                // زرار ثابت لفتح إعداد Home Assistant — مزروع في body فمش بيتمسح مع إعادة رسم الواجهة
-                if (url != null && (url.endsWith("/index.html") || url.endsWith("typegsmart.local/"))) {
-                    v.evaluateJavascript(
-                        "(function(){if(document.getElementById('ha-fab'))return;" +
-                        "var b=document.createElement('button');b.id='ha-fab';b.textContent='HA';" +
-                        "b.setAttribute('aria-label','Home Assistant');" +
-                        "b.style.cssText='position:fixed;bottom:76px;inset-inline-start:16px;z-index:9999;" +
-                        "width:48px;height:48px;border-radius:50%;border:0;background:#66edb4;color:#09291d;" +
-                        "font-weight:700;font-size:14px;box-shadow:0 4px 14px rgba(0,0,0,.4)';" +
-                        "b.onclick=function(){location.href='ha.html'};document.body.appendChild(b);})();", null);
-                }
-            }
         });
 
         web.addJavascriptInterface(new TypeGBridge(this), "TypeG");
