@@ -51,19 +51,23 @@ jobs:
       - name: Rename APK
         run: |
           mkdir -p dist
+          VER="1.3.0.${{ github.run_number }}"
+          cp app/build/outputs/apk/debug/app-debug.apk "dist/TypeG-Smart-$VER.apk"
           cp app/build/outputs/apk/debug/app-debug.apk dist/TypeG-Smart.apk
 
       - name: Upload APK (artifact)
         uses: actions/upload-artifact@v4
         with:
           name: TypeG-Smart-debug-apk
-          path: dist/TypeG-Smart.apk
+          path: dist/TypeG-Smart-*.apk
           if-no-files-found: error
 
-      - name: Publish APK to Releases (one direct link)
+      - name: Publish APK to Releases
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
           name: Type-G Smart v1.3.0.${{ github.run_number }}
-          body: "النسخة 1.3.0.${{ github.run_number }} — اضغط TypeG-Smart.apk تحت للتحميل المباشر."
-          files: dist/TypeG-Smart.apk
+          body: "النسخة 1.3.0.${{ github.run_number }} — نزّل الملف اللي فيه رقم النسخة (TypeG-Smart-1.3.0.${{ github.run_number }}.apk)، أو TypeG-Smart.apk للينك الثابت."
+          files: |
+            dist/TypeG-Smart-1.3.0.${{ github.run_number }}.apk
+            dist/TypeG-Smart.apk
