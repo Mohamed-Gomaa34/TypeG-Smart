@@ -55,7 +55,7 @@ public class ControlService extends Service {
         Notification.Builder b = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
             ? new Notification.Builder(this, CH) : new Notification.Builder(this);
         return b.setContentTitle("Type-G Smart")
-                .setContentText("المتحكم المحلي يعمل")
+                .setContentText("التحكم المحلي شغّال")
                 .setSmallIcon(R.mipmap.ic_launcher)
                 .setOngoing(true)
                 .build();

@@ -1,8 +1,6 @@
 package com.typegsmart.aio;
 
 import android.content.Context;
-import android.content.Intent;
-import android.net.Uri;
 import android.webkit.JavascriptInterface;
 
 import org.json.JSONArray;
@@ -10,7 +8,7 @@ import org.json.JSONObject;
 
 /**
  * جسر الواجهة ↔ الجافا. الواجهة بتنادي window.TypeG.call(action, json).
- * بدون أي تفعيل — license.active = true دايمًا للتوافق مع الواجهة.
+ * التطبيق يشتغل مباشرة بدون أي بوابة تفعيل.
  */
 public class TypeGBridge {
     private final Context ctx;
@@ -39,7 +37,6 @@ public class TypeGBridge {
         switch (a) {
             case "state":        return state();
             case "start":        ControlService.startSelf(ctx); eng().start(); return ok();
-            case "enable":       eng().start(); return ok();
 
             case "control": {
                 boolean on = "on".equals(b.optString("state"));
@@ -53,17 +50,6 @@ public class TypeGBridge {
                 return okc ? ok() : fail("DEVICE_DISCONNECTED");
             }
             case "groupControl":  eng().groupControl(b.optString("mac"), "on".equals(b.optString("state"))); return ok();
-
-            // ===== Home Assistant =====
-            case "haSave":        ha.save(b.optString("url"), b.optString("token")); return ok();
-            case "haStatus": {
-                JSONObject r = ok();
-                r.put("configured", ha.configured());
-                r.put("url", prefs.getStr("haUrl", ""));
-                if (ha.configured()) r.put("connected", ha.ping());
-                return r;
-            }
-            case "globalControl":
             case "allOff":        eng().allOff(); return ok();
 
             case "timer": {
@@ -75,7 +61,7 @@ public class TypeGBridge {
                 return eng().scheduleTimer(mac, ch, seconds, turnOn) ? ok() : fail("DEVICE_DISCONNECTED");
             }
 
-            case "wake":
+            // Wake-on-LAN
             case "wakeNow": {
                 JSONObject w = prefs.getObj("wakeConfig");
                 Wol.send(w.optString("mac", b.optString("mac")), w.optString("broadcast", null), w.optInt("port", 9));
@@ -83,76 +69,53 @@ public class TypeGBridge {
             }
             case "wakeSave":      prefs.setObj("wakeConfig", b); return ok();
 
+            // Home Assistant
+            case "haSave":        ha.save(b.optString("url"), b.optString("token")); return ok();
+            case "haStatus": {
+                JSONObject r = ok();
+                r.put("configured", ha.configured());
+                r.put("url", prefs.getStr("haUrl", ""));
+                if (ha.configured()) r.put("connected", ha.ping());
+                return r;
+            }
+
+            // الطاقة
             case "history": {
-                String mac = b.optString("mac");
                 long since = System.currentTimeMillis() - 24L * 3600 * 1000;
-                JSONObject r = ok(); r.put("points", eng().energy().history(mac, since)); return r;
+                JSONObject r = ok(); r.put("points", eng().energy().history(b.optString("mac"), since)); return r;
             }
             case "csv": {
-                String mac = b.optString("mac");
                 long since = System.currentTimeMillis() - 30L * 24 * 3600 * 1000;
-                JSONObject r = ok(); r.put("csv", eng().energy().csv(mac, since)); return r;
+                JSONObject r = ok(); r.put("csv", eng().energy().csv(b.optString("mac"), since)); return r;
             }
 
+            // الإعدادات والبيانات
             case "settings":      return saveSettings(b);
-            case "saveHome":      prefs.setObj("home", b); return ok();
-            case "provision":     prefs.setObj("home", b); ControlService.startSelf(ctx); return ok();
-            case "saveMeta":
-            case "edit":          return saveMeta(b);
+            case "saveMeta":      return saveMeta(b);
             case "saveTariff":    prefs.setObj("tariff", b); return ok();
 
-            // أوامر تُخزَّن كما هي (أتمتة/مشاهد) ويقرأها state
-            case "ruleAdd": case "saveRule": return pushInto("rules", b);
-            case "sceneSave": case "saveScene": return pushInto("scenes", b);
-
-            case "wifiSettings":  ctx.startActivity(new Intent(android.provider.Settings.ACTION_WIFI_SETTINGS)
-                                      .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); return ok();
-            case "guide":         return ok();   // الدليل يُفتح من الواجهة
-            default:              return ok();   // باقي الأوامر: لا تكسر الواجهة
+            default:              return ok();   // أمر غير معروف: بدون تأثير
         }
     }
 
-    // ===== بناء الحالة S =====
+    // ===== بناء الحالة S (المطلوبة للواجهة فقط) =====
     private JSONObject state() throws Exception {
         JSONObject s = new JSONObject();
         s.put("running", eng().isRunning());
-        s.put("onboarded", prefs.getBool("onboarded", false));
         s.put("lang", prefs.getStr("lang", "ar"));
-        s.put("themeMode", prefs.getStr("themeMode", "system"));
-        s.put("palette", prefs.getStr("palette", "mint"));
-        s.put("sound", prefs.getBool("sound", true));
-        s.put("motion", prefs.getBool("motion", true));
-        s.put("haptic", prefs.getBool("haptic", true));
-        s.put("soundVolume", prefs.getInt("soundVolume", 1));
-        s.put("pollSeconds", prefs.getInt("pollSeconds", 3));
-        s.put("usageAlerts", prefs.getBool("usageAlerts", true));
-        s.put("dailyLimit", prefs.getInt("dailyLimit", 0));
-        JSONObject home = prefs.getObj("home");
-        s.put("homeSSID", home.optString("ssid", ""));
-        s.put("homeIP", home.optString("ip", ""));
         s.put("tariff", prefs.getObj("tariff"));
-        s.put("tariffCatalog", prefs.getArr("tariffCatalog"));
+        s.put("wakeConfig", prefs.getObj("wakeConfig"));
         JSONArray devices = eng().devicesJson();
         if (ha.configured()) devices.put(ha.device());   // دمج جهاز Home Assistant
         s.put("devices", devices);
         s.put("haConfigured", ha.configured());
-        s.put("scenes", prefs.getArr("scenes"));
-        s.put("events", prefs.getArr("events"));
-        s.put("prompts", new JSONArray());
-        // التفعيل متشال — نخلي الواجهة تعدّي القفل
-        s.put("license", new JSONObject().put("active", true));
-        s.put("terms", new JSONObject().put("accepted", true));
         return s;
     }
 
     private JSONObject saveSettings(JSONObject b) {
-        if (b.has("sound"))   prefs.setBool("sound", b.optBoolean("sound"));
-        if (b.has("motion"))  prefs.setBool("motion", b.optBoolean("motion"));
-        if (b.has("haptic"))  prefs.setBool("haptic", b.optBoolean("haptic"));
-        if (b.has("lang"))    prefs.setStr("lang", b.optString("lang"));
-        if (b.has("themeMode")) prefs.setStr("themeMode", b.optString("themeMode"));
+        if (b.has("lang"))        prefs.setStr("lang", b.optString("lang"));
+        if (b.has("themeMode"))   prefs.setStr("themeMode", b.optString("themeMode"));
         if (b.has("pollSeconds")) prefs.setInt("pollSeconds", b.optInt("pollSeconds"));
-        if (b.has("dailyLimit"))  prefs.setInt("dailyLimit", b.optInt("dailyLimit"));
         return ok();
     }
 
@@ -165,12 +128,6 @@ public class TypeGBridge {
         return ok();
     }
 
-    private JSONObject pushInto(String key, JSONObject item) {
-        JSONArray a = prefs.getArr(key);
-        a.put(item);
-        prefs.setArr(key, a);
-        return ok();
-    }
 
     private JSONObject ok() { try { return new JSONObject().put("ok", true); } catch (Exception e) { return new JSONObject(); } }
     private JSONObject fail(String code) {
