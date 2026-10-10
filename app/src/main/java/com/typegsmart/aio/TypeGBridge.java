@@ -107,6 +107,15 @@ public class TypeGBridge {
             case "homeIp": {
                 JSONObject r = ok(); r.put("ip", prov.currentWifiIp()); return r;
             }
+            // تشخيص: عنوان الموبايل + حالة السيرفر + آخر الأحداث (اتصالات واردة من المشترك)
+            case "diag": {
+                JSONObject r = ok();
+                r.put("ip", prov.currentWifiIp());
+                r.put("running", eng().isRunning());
+                r.put("port", eng().serverPort());
+                r.put("events", eng().recentEvents());
+                return r;
+            }
             // دفتر شبكات البيت (اسم ← باسوورد) محليًا
             case "wifiSave":      prefs.setStr("wifi_" + b.optString("ssid"), b.optString("password")); return ok();
             case "wifiGet": {
@@ -122,7 +131,10 @@ public class TypeGBridge {
                 if (!homeSsid.isEmpty()) prefs.setStr("wifi_" + homeSsid, homePass);
                 prov.provision(apSsid, apPass, homeSsid, homePass, serverIp, new Provisioner.Callback() {
                     public void progress(String m) { MainActivity.pushJs("window.onProvision&&window.onProvision('progress'," + JSONObject.quote(m) + ")"); }
-                    public void done(boolean okr, String m) { MainActivity.pushJs("window.onProvision&&window.onProvision(" + (okr?"'ok'":"'fail'") + "," + JSONObject.quote(m) + ")"); }
+                    public void done(boolean okr, String m) {
+                        try { eng().logEvent(okr ? "PROVISION_OK" : "PROVISION_FAIL", serverIp + " / " + m); } catch (Exception ignore) {}
+                        MainActivity.pushJs("window.onProvision&&window.onProvision(" + (okr?"'ok'":"'fail'") + "," + JSONObject.quote(m) + ")");
+                    }
                 });
                 JSONObject r = ok(); r.put("started", true); return r;
             }

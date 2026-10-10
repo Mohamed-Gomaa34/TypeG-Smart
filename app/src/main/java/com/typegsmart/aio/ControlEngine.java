@@ -74,6 +74,10 @@ public class ControlEngine implements StripConnection.Listener {
                 while (running) {
                     try {
                         Socket client = s.accept();
+                        try {
+                            java.net.InetAddress ra = client.getInetAddress();
+                            logEvent("INBOUND", ra == null ? "?" : ra.getHostAddress());  // أي اتصال وصل للموبايل
+                        } catch (Exception ignore) {}
                         StripConnection conn = new StripConnection(client, this);
                         pool.execute(conn);
                     } catch (Exception e) {
@@ -116,6 +120,7 @@ public class ControlEngine implements StripConnection.Listener {
             try { d.put("online", true); d.put("name", d.optString("name", name)); } catch (Exception ignore) {}
             devices.put(mac, d);
             saveDevices();
+            logEvent("STRIP_READY", mac + (name == null ? "" : " " + name));  // المشترك عرّف نفسه بنجاح
             conn.send(Protocol.getInfoAll());   // استعلم عن كل المخارج بعد الاتصال
             return;
         }
@@ -377,6 +382,10 @@ public class ControlEngine implements StripConnection.Listener {
     private void saveDevices() { prefs.setArr("devices", devicesJson()); }
 
     public EnergyStore energy() { return energy; }
+
+    /** آخر الأحداث (للتشخيص): اتصالات واردة، جاهزية المشتركات، أخطاء. */
+    public JSONArray recentEvents() { return prefs.getArr("events"); }
+    public int serverPort() { return Protocol.PORT; }
 
     public void logEvent(String code, String detail) {
         JSONArray ev = prefs.getArr("events");

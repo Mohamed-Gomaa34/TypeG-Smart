@@ -55,6 +55,11 @@ function MOCK(action, b) {
     case 'scanStrips': return { networks: ['TONLY_TAP_A1B2C3D'] };
     case 'apPassword': { const s=b.ssid||''; return { password: s.startsWith('TONLY_TAP_')?('LGU_'+s.slice(10)):'' }; }
     case 'homeIp': return { ip: '192.168.1.37' };
+    case 'diag': return { ip: '192.168.1.37', running: true, port: 10086, events: [
+      { ts: Date.now()-60000, code: 'PROVISION_OK', detail: '192.168.1.37 / OK' },
+      { ts: Date.now()-30000, code: 'INBOUND', detail: '192.168.1.42' },
+      { ts: Date.now()-29000, code: 'STRIP_READY', detail: 'DEMO01 TypeG' }
+    ] };
     case 'wifiGet': return { password: '' };
     case 'provision': {
       setTimeout(()=>window.onProvision&&window.onProvision('progress','CONNECTING_AP'),300);
@@ -248,6 +253,12 @@ function viewSettings() {
       </div>
     </section>
 
+    <h2 class="hd">${t('تشخيص الاتصال','Connection diagnostics')}</h2>
+    <section class="block card"><div class="row"><div class="info">
+        <b>${t('حالة الاتصال بالمشترك','Strip link status')}</b>
+        <small>${t('شوف هل المشترك بيوصل للموبايل بعد الإعداد','See if the strip reaches the phone after setup')}</small>
+      </div><button class="iconbtn" data-act="diag">⋯</button></div></section>
+
     <h2 class="hd">${t('عن','About')}</h2>
     <section class="block card"><div class="kv"><span>${t('المشترك','Strip')}</span><b>MTTL-W01</b></div>
       <div class="kv"><span>${t('الإصدار','Version')}</span><b dir="ltr">${esc(S.appVersion||'—')}</b></div>
@@ -381,6 +392,47 @@ function sheetSetup(){
   };
 }
 
+function evtLabel(code){
+  const m={
+    INBOUND:t('📥 اتصال وصل من','📥 Inbound connection from'),
+    STRIP_READY:t('✅ المشترك اتعرّف','✅ Strip identified'),
+    PROVISION_OK:t('📤 الإعداد اتبعت بنجاح','📤 Setup sent OK'),
+    PROVISION_FAIL:t('⚠️ الإعداد فشل','⚠️ Setup failed'),
+    CONNECT_ERROR:t('خطأ اتصال','Connect error'),
+    ENGINE_ERROR:t('خطأ في الخدمة','Engine error'),
+    TIMER_FIRED:t('مؤقت اشتغل','Timer fired'),
+    TIMER_CANCELLED:t('مؤقت اتلغى','Timer cancelled')
+  };
+  return m[code]||code;
+}
+function fmtTime(ts){ try{ const d=new Date(+ts); return d.toLocaleTimeString(AR()?'ar-EG':'en',{hour:'2-digit',minute:'2-digit',second:'2-digit'}); }catch(e){ return ''; } }
+function renderDiag(){
+  const r=api('diag')||{};
+  const ip=r.ip||t('مش متصل بواي فاي','not on Wi-Fi');
+  const running=r.running;
+  const evs=(r.events||[]).slice().reverse();  // الأحدث فوق
+  const gotInbound=(r.events||[]).some(e=>e.code==='INBOUND');
+  const gotReady=(r.events||[]).some(e=>e.code==='STRIP_READY');
+  let verdict='';
+  if(gotReady) verdict=`<div class="hero" style="padding:12px"><b style="color:var(--mint)">${t('المشترك وصل للموبايل واتعرّف ✓','Strip reached the phone ✓')}</b></div>`;
+  else if(gotInbound) verdict=`<div class="hero" style="padding:12px"><b style="color:var(--amber)">${t('وصل اتصال بس مكمّلش التعريف — غالبًا بروتوكول/منفذ','A connection arrived but did not identify — likely protocol/port')}</b></div>`;
+  else verdict=`<div class="hero" style="padding:12px"><b style="color:var(--coral)">${t('لسه مفيش أي اتصال من المشترك وصل للموبايل','No connection from the strip has reached the phone yet')}</b></div>`;
+  const evHtml = evs.length? evs.map(e=>`<div class="kv"><span>${fmtTime(e.ts)}</span><b style="max-width:62%;text-align:${AR()?'left':'right'};direction:ltr">${esc(evtLabel(e.code))} ${esc(e.detail||'')}</b></div>`).join('')
+    : `<div class="empty">${t('مفيش أحداث لسه','No events yet')}</div>`;
+  $('sheet-body').innerHTML = `<h3>${t('تشخيص الاتصال','Connection diagnostics')}</h3>
+    ${verdict}
+    <section class="block card">
+      <div class="kv"><span>${t('عنوان الموبايل الحالي','Phone IP now')}</span><b dir="ltr">${esc(ip)}</b></div>
+      <div class="kv"><span>${t('السيرفر','Server')}</span><b>${running?t('شغّال على منفذ','listening on port')+' '+(r.port||10086):t('متوقف','stopped')}</b></div>
+    </section>
+    <h2 class="hd">${t('سجل الأحداث','Event log')}</h2>
+    <section class="block card">${evHtml}</section>
+    <p class="sub">${t('المشترك المفروض يتصل بعنوان الموبايل ده على المنفذ ده. لو العنوان بيتغير كل شوية، احجزه ثابت في الراوتر (DHCP reservation)، ولو الراوتر مفعّل عزل العملاء (AP/Client Isolation) قفله.','The strip must reach this phone IP on this port. If the IP keeps changing, reserve it in your router (DHCP reservation); if the router has AP/Client Isolation on, turn it off.')}</p>
+    <div class="btnrow"><button class="b pri wide" id="d-refresh">${t('تحديث','Refresh')}</button></div>`;
+  $('d-refresh').onclick=renderDiag;
+}
+function sheetDiag(){ $('sheet').hidden=false; renderDiag(); }
+
 /* ---------- actions ---------- */
 function afterRender() {
   // bars heights (avoid inline style in markup; set via JS)
@@ -407,7 +459,7 @@ document.addEventListener('click', e => {
     if (a==='allOff') { api('allOff',{}); setTimeout(refresh,350);} 
     else if (a==='allOn') { stripDevices().forEach(d=>api('groupControl',{mac:d.mac,state:'on'})); setTimeout(refresh,350);} 
     else if (a==='tariff') sheetTariff(); else if (a==='wake') sheetWake(); else if (a==='ha') sheetHA();
-    else if (a==='setup') sheetSetup(); return; }
+    else if (a==='setup') sheetSetup(); else if (a==='diag') sheetDiag(); return; }
   if (e.target.id === 'sheet') closeSheet();
 });
 

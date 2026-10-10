@@ -2,6 +2,8 @@ package com.typegsmart.aio;
 
 import android.content.Context;
 import android.net.ConnectivityManager;
+import android.net.LinkAddress;
+import android.net.LinkProperties;
 import android.net.Network;
 import android.net.NetworkCapabilities;
 import android.net.NetworkRequest;
@@ -13,6 +15,8 @@ import android.os.Build;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
+import java.net.Inet4Address;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
@@ -66,7 +70,22 @@ public class Provisioner {
     }
 
     /** IP الموبايل الحالي على الواي فاي (بيتحفظ عشان المشترك يتصل بيه بعد الإعداد). */
+    @SuppressWarnings("deprecation")
     public String currentWifiIp() {
+        // الأفضل: IPv4 الحقيقي للشبكة النشطة (شبكة البيت) — أدق من WifiManager القديم
+        try {
+            ConnectivityManager cm = (ConnectivityManager) ctx.getSystemService(Context.CONNECTIVITY_SERVICE);
+            Network n = (cm != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) ? cm.getActiveNetwork() : null;
+            if (n != null) {
+                LinkProperties lp = cm.getLinkProperties(n);
+                if (lp != null) for (LinkAddress la : lp.getLinkAddresses()) {
+                    InetAddress a = la.getAddress();
+                    if (a instanceof Inet4Address && !a.isLoopbackAddress() && !a.isAnyLocalAddress())
+                        return a.getHostAddress();
+                }
+            }
+        } catch (Exception ignore) {}
+        // احتياطي: الطريقة القديمة
         try {
             WifiManager wm = (WifiManager) ctx.getSystemService(Context.WIFI_SERVICE);
             int ip = wm.getConnectionInfo().getIpAddress();
