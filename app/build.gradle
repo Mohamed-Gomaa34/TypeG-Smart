@@ -16,9 +16,22 @@ android {
         versionName runNo > 0 ? "${baseName}.${runNo}" : "${baseName}-dev"
     }
     buildFeatures { buildConfig true }
+
+    signingConfigs {
+        shared {
+            storeFile file('signing.jks')
+            storePassword 'typegsmart'
+            keyAlias 'typeg'
+            keyPassword 'typegsmart'
+        }
+    }
     buildTypes {
+        debug {
+            signingConfig signingConfigs.shared   // مفتاح ثابت => التحديثات تتثبّت فوق القديمة
+        }
         release {
             minifyEnabled false        // الكود مش متصغّر عشان يفضل مقروء للتطوير
+            signingConfig signingConfigs.shared
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
