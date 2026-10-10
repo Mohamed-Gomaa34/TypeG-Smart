@@ -142,6 +142,7 @@ public class TypeGBridge {
         if (ha.configured()) devices.put(ha.device());   // دمج جهاز Home Assistant
         s.put("devices", devices);
         s.put("haConfigured", ha.configured());
+        s.put("appVersion", BuildConfig.VERSION_NAME);
         return s;
     }
 

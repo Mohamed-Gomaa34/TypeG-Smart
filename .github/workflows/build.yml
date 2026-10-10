@@ -64,6 +64,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
-          name: أحدث نسخة - Type-G Smart
-          body: "اضغط TypeG-Smart.apk تحت للتحميل المباشر."
+          name: Type-G Smart v1.3.0.${{ github.run_number }}
+          body: "النسخة 1.3.0.${{ github.run_number }} — اضغط TypeG-Smart.apk تحت للتحميل المباشر."
           files: dist/TypeG-Smart.apk

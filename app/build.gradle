@@ -1,5 +1,9 @@
 plugins { id 'com.android.application' }
 
+// رقم البناء من GitHub Actions — كل نسخة لها رقم فريد وتزايدي تلقائيًا
+def runNo = (System.getenv("GITHUB_RUN_NUMBER") ?: "0").toInteger()
+def baseName = "1.3.0"
+
 android {
     namespace 'com.typegsmart.aio'
     compileSdk 35
@@ -8,9 +12,10 @@ android {
         applicationId "com.typegsmart.aio"
         minSdk 26
         targetSdk 35
-        versionCode 11
-        versionName "1.2.1"
+        versionCode 100 + runNo
+        versionName runNo > 0 ? "${baseName}.${runNo}" : "${baseName}-dev"
     }
+    buildFeatures { buildConfig true }
     buildTypes {
         release {
             minifyEnabled false        // الكود مش متصغّر عشان يفضل مقروء للتطوير

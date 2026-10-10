@@ -30,7 +30,7 @@ let _mock = null;
 function MOCK(action, b) {
   if (!_mock) _mock = {
     running: true, haConfigured: false, lang: LANG, themeMode: 'system',
-    tariff: { rate: 2.15 }, homeSSID: 'Home-WiFi',
+    tariff: { rate: 2.15 }, homeSSID: 'Home-WiFi', appVersion: '1.3.0-dev',
     devices: [{ mac: 'DEMO01', name: t('مشترك المكتب', 'Office strip'), online: true, outlets: [
       { channel: 1, name: t('الكمبيوتر', 'Computer'), room: '', state: 'on', watts: 142.5, wh: 480, cost: 1.03, protected: false },
       { channel: 2, name: t('الشاشة', 'Monitor'), room: '', state: 'on', watts: 28.0, wh: 95, cost: 0.2, protected: false },
@@ -250,7 +250,7 @@ function viewSettings() {
 
     <h2 class="hd">${t('عن','About')}</h2>
     <section class="block card"><div class="kv"><span>${t('المشترك','Strip')}</span><b>MTTL-W01</b></div>
-      <div class="kv"><span>${t('الإصدار','Version')}</span><b>1.2.1</b></div>
+      <div class="kv"><span>${t('الإصدار','Version')}</span><b dir="ltr">${esc(S.appVersion||'—')}</b></div>
       ${hasBridge?'':`<div class="kv"><span>${t('وضع المعاينة','Preview mode')}</span><b>${t('بيانات تجريبية','demo data')}</b></div>`}</section>`;
 }
 
