@@ -13,6 +13,9 @@ import android.webkit.WebViewClient;
 
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
+import androidx.core.graphics.Insets;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
 import androidx.webkit.WebViewAssetLoader;
 import androidx.webkit.WebViewAssetLoader.AssetsPathHandler;
 
@@ -65,6 +68,14 @@ public class MainActivity extends AppCompatActivity {
             @Override public WebResourceResponse shouldInterceptRequest(WebView v, WebResourceRequest req) {
                 return loader.shouldInterceptRequest(req.getUrl());
             }
+        });
+
+        web.setBackgroundColor(0xFF0A1019);   // لون الخلفية في منطقة شرائط النظام
+        // احترام حواف النظام (شريط الحالة فوق وشريط التنقل تحت) — أندرويد 15 edge-to-edge
+        ViewCompat.setOnApplyWindowInsetsListener(web, (v, insets) -> {
+            Insets bars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
+            v.setPadding(bars.left, bars.top, bars.right, bars.bottom);
+            return insets;
         });
 
         web.addJavascriptInterface(new TypeGBridge(this), "TypeG");
