@@ -15,8 +15,13 @@ import org.json.JSONObject;
 public class TypeGBridge {
     private final Context ctx;
     private final Prefs prefs;
+    private final HaClient ha;
 
-    public TypeGBridge(Context c) { this.ctx = c.getApplicationContext(); this.prefs = new Prefs(ctx); }
+    public TypeGBridge(Context c) {
+        this.ctx = c.getApplicationContext();
+        this.prefs = new Prefs(ctx);
+        this.ha = new HaClient(prefs);
+    }
 
     private ControlEngine eng() { return ControlService.engine(ctx); }
 
@@ -38,10 +43,24 @@ public class TypeGBridge {
 
             case "control": {
                 boolean on = "on".equals(b.optString("state"));
-                boolean okc = eng().setOutlet(b.optString("mac"), b.optInt("channel"), on);
+                String mac = b.optString("mac");
+                if (HaClient.MAC.equals(mac)) {   // توجيه لـ Home Assistant
+                    return ha.setByChannel(b.optInt("channel"), on) ? ok() : fail("DEVICE_DISCONNECTED");
+                }
+                boolean okc = eng().setOutlet(mac, b.optInt("channel"), on);
                 return okc ? ok() : fail("DEVICE_DISCONNECTED");
             }
             case "groupControl":  eng().groupControl(b.optString("mac"), "on".equals(b.optString("state"))); return ok();
+
+            // ===== Home Assistant =====
+            case "haSave":        ha.save(b.optString("url"), b.optString("token")); return ok();
+            case "haStatus": {
+                JSONObject r = ok();
+                r.put("configured", ha.configured());
+                r.put("url", prefs.getStr("haUrl", ""));
+                if (ha.configured()) r.put("connected", ha.ping());
+                return r;
+            }
             case "globalControl":
             case "allOff":        eng().allOff(); return ok();
 
@@ -111,7 +130,10 @@ public class TypeGBridge {
         s.put("homeIP", home.optString("ip", ""));
         s.put("tariff", prefs.getObj("tariff"));
         s.put("tariffCatalog", prefs.getArr("tariffCatalog"));
-        s.put("devices", eng().devicesJson());
+        JSONArray devices = eng().devicesJson();
+        if (ha.configured()) devices.put(ha.device());   // دمج جهاز Home Assistant
+        s.put("devices", devices);
+        s.put("haConfigured", ha.configured());
         s.put("scenes", prefs.getArr("scenes"));
         s.put("events", prefs.getArr("events"));
         s.put("prompts", new JSONArray());
