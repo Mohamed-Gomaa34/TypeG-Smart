@@ -105,7 +105,9 @@ input.in,select.in{width:100%;padding:12px;border-radius:var(--r-sm);border:1px 
 #nav button svg{width:23px;height:23px;stroke:currentColor;fill:none;stroke-width:1.7}
 #nav button.sel{color:var(--mint)}
 /* sheet (modal) */
-.sheet{position:fixed;inset:0;z-index:40;background:rgba(0,0,0,.5);display:flex;align-items:flex-end;justify-content:center}
+.sheet{position:fixed;inset:0;z-index:40;background:rgba(0,0,0,.5);align-items:flex-end;justify-content:center}
+.sheet[hidden]{display:none}
+.sheet:not([hidden]){display:flex}
 .sheet-body{background:var(--surface);width:100%;max-width:620px;border-radius:20px 20px 0 0;padding:18px var(--gut) calc(22px + var(--inset-bottom));
   border:1px solid var(--line);max-height:86vh;overflow:auto}
 .sheet h3{margin:4px 0 10px;font-size:18px}
