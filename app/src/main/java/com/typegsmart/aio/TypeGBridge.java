@@ -14,11 +14,13 @@ public class TypeGBridge {
     private final Context ctx;
     private final Prefs prefs;
     private final HaClient ha;
+    private final Provisioner prov;
 
     public TypeGBridge(Context c) {
         this.ctx = c.getApplicationContext();
         this.prefs = new Prefs(ctx);
         this.ha = new HaClient(prefs);
+        this.prov = new Provisioner(ctx);
     }
 
     private ControlEngine eng() { return ControlService.engine(ctx); }
@@ -93,6 +95,37 @@ public class TypeGBridge {
             case "settings":      return saveSettings(b);
             case "saveMeta":      return saveMeta(b);
             case "saveTariff":    prefs.setObj("tariff", b); return ok();
+
+            // ===== إعداد المشترك تلقائيًا =====
+            case "prepPerms":     MainActivity.requestWifiPerms(); return ok();
+            case "scanStrips": {
+                JSONObject r = ok(); r.put("networks", new JSONArray(prov.scanStrips())); return r;
+            }
+            case "apPassword": {
+                JSONObject r = ok(); r.put("password", Provisioner.apPassword(b.optString("ssid"))); return r;
+            }
+            case "homeIp": {
+                JSONObject r = ok(); r.put("ip", prov.currentWifiIp()); return r;
+            }
+            // دفتر شبكات البيت (اسم ← باسوورد) محليًا
+            case "wifiSave":      prefs.setStr("wifi_" + b.optString("ssid"), b.optString("password")); return ok();
+            case "wifiGet": {
+                JSONObject r = ok(); r.put("password", prefs.getStr("wifi_" + b.optString("ssid"), "")); return r;
+            }
+            case "provision": {
+                final String apSsid = b.optString("apSsid");
+                final String apPass = b.optString("apPass", Provisioner.apPassword(apSsid));
+                final String homeSsid = b.optString("homeSsid");
+                final String homePass = b.optString("homePass");
+                final String serverIp = b.optString("serverIp", prov.currentWifiIp());
+                // احفظ باسوورد شبكة البيت للمرة الجاية
+                if (!homeSsid.isEmpty()) prefs.setStr("wifi_" + homeSsid, homePass);
+                prov.provision(apSsid, apPass, homeSsid, homePass, serverIp, new Provisioner.Callback() {
+                    public void progress(String m) { MainActivity.pushJs("window.onProvision&&window.onProvision('progress'," + JSONObject.quote(m) + ")"); }
+                    public void done(boolean okr, String m) { MainActivity.pushJs("window.onProvision&&window.onProvision(" + (okr?"'ok'":"'fail'") + "," + JSONObject.quote(m) + ")"); }
+                });
+                JSONObject r = ok(); r.put("started", true); return r;
+            }
 
             default:              return ok();   // أمر غير معروف: بدون تأثير
         }

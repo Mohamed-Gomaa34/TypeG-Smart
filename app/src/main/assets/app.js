@@ -52,6 +52,16 @@ function MOCK(action, b) {
     case 'settings': if ('themeMode' in b) _mock.themeMode = b.themeMode; return { ok: true };
     case 'timer': { const o = out(b.channel); if (o) { if (b.seconds > 0) o.timer = { seconds: b.seconds, state: b.state }; else delete o.timer; } return { ok: true }; }
     case 'history': { const pts = []; for (let i=0;i<24;i++) pts.push({ w: 40+Math.random()*120 }); return { points: pts }; }
+    case 'scanStrips': return { networks: ['TONLY_TAP_A1B2C3D'] };
+    case 'apPassword': { const s=b.ssid||''; return { password: s.startsWith('TONLY_TAP_')?('LGU_'+s.slice(10)):'' }; }
+    case 'homeIp': return { ip: '192.168.1.37' };
+    case 'wifiGet': return { password: '' };
+    case 'provision': {
+      setTimeout(()=>window.onProvision&&window.onProvision('progress','CONNECTING_AP'),300);
+      setTimeout(()=>window.onProvision&&window.onProvision('progress','SENDING_WIFI'),1200);
+      setTimeout(()=>window.onProvision&&window.onProvision('ok','OK'),2200);
+      return { started: true };
+    }
     default: return { ok: true };
   }
 }
@@ -163,9 +173,11 @@ function outletRow(mac, o) {
 
 function viewOutlets() {
   const sd = stripDevices();
-  if (!sd.length) return `<h1 class="page">${t('المخارج','Outlets')}</h1><section class="block card"><div class="empty">${t('مفيش مشترك متصل','No strip connected')}</div></section>`;
+  const addBtn = `<div class="btnrow"><button class="b pri wide" data-act="setup">${t('+ إضافة مشترك جديد','+ Add a strip')}</button></div>`;
+  if (!sd.length) return `<h1 class="page">${t('المخارج','Outlets')}</h1><section class="block card"><div class="empty">${t('مفيش مشترك متصل','No strip connected')}</div></section>${addBtn}`;
   return `<h1 class="page">${t('المخارج','Outlets')}</h1>
     <p class="sub">${t('اضغط على المخرج في الصورة أو المفتاح','Tap a socket in the picture or a switch')}</p>
+    ${addBtn}
     ${sd.map(d => `
       <section class="block stripwrap"><div class="cap"><b>${esc(d.name||'Type-G')}</b>
         <span>${d.online?t('يعمل','online'):t('غير متصل','offline')}</span></div>
@@ -309,6 +321,66 @@ function sheetHA() {
   };
 }
 
+function provMsg(code){
+  const m={
+    CONNECTING_AP:t('بنتصل بشبكة المشترك… وافق على الطلب اللي هيظهر','Joining the strip network… approve the prompt'),
+    SENDING_IP:t('بنظبط عنوان الموبايل…','Setting phone address…'),
+    SENDING_WIFI:t('بنبعت بيانات الواي فاي…','Sending Wi-Fi details…'),
+    OK:t('تم! المشترك هيعمل ريستارت ويتصل خلال لحظات','Done! The strip will restart and connect shortly'),
+    AP_UNAVAILABLE:t('مقدرش يتصل بشبكة المشترك — اتأكد إنها ظاهرة وإن المشترك في وضع الإعداد','Could not join the strip network — make sure it is in setup mode'),
+    IP_REJECTED:t('المشترك رفض عنوان الموبايل','The strip rejected the phone address'),
+    CONNECT_REJECTED:t('المشترك رفض بيانات الواي فاي — راجع الاسم والباسوورد','The strip rejected the Wi-Fi details'),
+    AP_IO_ERROR:t('مشكلة في الاتصال بخدمة الإعداد','Could not reach the setup service'),
+    BAD_WIFI_CREDS:t('اسم/باسوورد الواي فاي ميحتوش «:» أو أسطر جديدة','Wi-Fi name/password cannot contain ":" or newlines'),
+    ANDROID_TOO_OLD:t('نسخة الأندرويد قديمة على الإعداد التلقائي — اتصل بالشبكة يدويًا','Android too old for auto-setup — connect manually')
+  };
+  return m[code]||code;
+}
+window.onProvision=function(kind,code){ const el=document.getElementById('s-msg'); if(!el)return;
+  el.innerHTML = kind==='ok'?('<span class="ok">'+provMsg('OK')+'</span>')
+    : kind==='fail'?('<span class="bad">'+provMsg(code)+'</span>') : provMsg(code);
+};
+
+function sheetSetup(){
+  api('prepPerms');
+  const ip=(api('homeIp')||{}).ip||'';
+  openSheet(`<h3>${t('إضافة مشترك جديد','Add a strip')}</h3>
+    <p class="sub">${t('هنتصل بشبكة المشترك المؤقتة، نظبط الواي فاي، ونوجّهه للموبايل — من غير ما تكتب باسوورد المشترك.','We join the strip network, set Wi-Fi, and point it to your phone — no typing the strip password.')}</p>
+    <p class="sub">${t('اضغط زرار المشترك ١٠ ثواني لحد ما اللمبة تنوّر بسرعة.','Hold the strip button ~10s until the LED blinks fast.')}</p>
+    <label class="f">${t('شبكة المشترك','Strip network')}</label>
+    <input class="in" id="s-ap" placeholder="TONLY_TAP_XXXXXXX" dir="ltr">
+    <div class="btnrow"><button class="b wide" id="s-scan">${t('مسح الشبكات القريبة','Scan nearby')}</button></div>
+    <div id="s-list" class="chips"></div>
+    <label class="f">${t('باسوورد المشترك (تلقائي من الاسم)','Strip password (auto from name)')}</label>
+    <input class="in" id="s-appw" dir="ltr" readonly>
+    <h2 class="hd">${t('شبكة البيت','Home Wi-Fi')}</h2>
+    <label class="f">${t('اسم شبكة البيت','Home Wi-Fi name')}</label>
+    <input class="in" id="s-hs" dir="ltr">
+    <label class="f">${t('باسوورد شبكة البيت','Home Wi-Fi password')}</label>
+    <input class="in" id="s-hp" dir="ltr">
+    <label class="f">${t('عنوان الموبايل (IP)','Phone address (IP)')}</label>
+    <input class="in" id="s-ip" dir="ltr" value="${esc(ip)}">
+    <div class="btnrow"><button class="b pri wide" id="s-go">${t('ابدأ الإعداد','Start setup')}</button></div>
+    <div id="s-msg" class="sub"></div>`);
+  const ap=document.getElementById('s-ap'), appw=document.getElementById('s-appw');
+  const deriv=()=>{ appw.value=((api('apPassword',{ssid:ap.value})||{}).password)||''; };
+  ap.addEventListener('input',deriv);
+  document.getElementById('s-scan').onclick=()=>{ api('prepPerms');
+    const r=api('scanStrips')||{}; const nets=r.networks||[];
+    document.getElementById('s-list').innerHTML = nets.length?nets.map(n=>`<button class="chip" data-net="${esc(n)}">${esc(n)}</button>`).join('')
+      : `<span class="sub">${t('مفيش شبكات مشترك ظهرت — قرّب من المشترك وتأكد إنه في وضع الإعداد','No strip networks found — get closer and ensure setup mode')}</span>`; };
+  document.getElementById('s-list').onclick=e=>{ const b=e.target.closest('[data-net]'); if(!b)return; ap.value=b.dataset.net; deriv(); };
+  document.getElementById('s-hs').addEventListener('blur',e=>{ const pw=((api('wifiGet',{ssid:e.target.value})||{}).password)||''; if(pw&&!document.getElementById('s-hp').value) document.getElementById('s-hp').value=pw; });
+  document.getElementById('s-go').onclick=()=>{
+    const apSsid=ap.value.trim(), homeSsid=document.getElementById('s-hs').value.trim(),
+          homePass=document.getElementById('s-hp').value, serverIp=document.getElementById('s-ip').value.trim();
+    if(!apSsid){ document.getElementById('s-msg').textContent=t('اكتب أو امسح اسم شبكة المشترك','Enter or scan the strip network'); return; }
+    if(!homeSsid){ document.getElementById('s-msg').textContent=t('اكتب اسم شبكة البيت','Enter the home Wi-Fi name'); return; }
+    document.getElementById('s-msg').textContent=t('بنبدأ…','Starting…');
+    api('provision',{apSsid,homeSsid,homePass,serverIp});
+  };
+}
+
 /* ---------- actions ---------- */
 function afterRender() {
   // bars heights (avoid inline style in markup; set via JS)
@@ -334,7 +406,8 @@ document.addEventListener('click', e => {
   const ac = e.target.closest('[data-act]'); if (ac) { const a = ac.dataset.act;
     if (a==='allOff') { api('allOff',{}); setTimeout(refresh,350);} 
     else if (a==='allOn') { stripDevices().forEach(d=>api('groupControl',{mac:d.mac,state:'on'})); setTimeout(refresh,350);} 
-    else if (a==='tariff') sheetTariff(); else if (a==='wake') sheetWake(); else if (a==='ha') sheetHA(); return; }
+    else if (a==='tariff') sheetTariff(); else if (a==='wake') sheetWake(); else if (a==='ha') sheetHA();
+    else if (a==='setup') sheetSetup(); return; }
   if (e.target.id === 'sheet') closeSheet();
 });
 
