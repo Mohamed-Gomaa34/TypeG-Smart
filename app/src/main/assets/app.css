@@ -1,4 +1,5 @@
 /* Type-G Smart — واجهة التحكم. الهوية: نعناعي/كحلي. */
+:root{--inset-top:env(safe-area-inset-top,0px);--inset-bottom:env(safe-area-inset-bottom,0px);--inset-left:env(safe-area-inset-left,0px);--inset-right:env(safe-area-inset-right,0px)}
 :root{
   --bg:#0a1019; --bg2:#0e1726; --surface:#13202f; --surface2:#182838; --line:#26384b;
   --fg:#eef4fa; --muted:#93a6ba; --faint:#5f7389;
@@ -23,7 +24,7 @@ body{
   font-variant-numeric:tabular-nums;
 }
 /* header */
-#top{display:flex;align-items:center;gap:12px;padding:14px var(--gut) 10px;position:sticky;top:0;z-index:20;
+#top{display:flex;align-items:center;gap:12px;padding:calc(14px + var(--inset-top)) calc(var(--gut) + var(--inset-right)) 10px calc(var(--gut) + var(--inset-left));position:sticky;top:0;z-index:20;
   background:linear-gradient(var(--bg),rgba(10,16,25,0));backdrop-filter:blur(6px)}
 #top .logo{width:34px;height:34px}
 .brand{display:flex;flex-direction:column;line-height:1.1;flex:1;min-width:0}
@@ -35,7 +36,7 @@ body{
 .ghost{background:transparent;border:1px solid var(--line);color:var(--muted);border-radius:999px;
   padding:6px 12px;font-size:13px;cursor:pointer}
 /* layout */
-#view{flex:1;padding:6px var(--gut) 96px;max-width:620px;width:100%;margin-inline:auto}
+#view{flex:1;padding:6px calc(var(--gut) + var(--inset-right)) 96px calc(var(--gut) + var(--inset-left));max-width:620px;width:100%;margin-inline:auto}
 section.block{margin:16px 0}
 h1.page{font-size:22px;margin:10px 2px 2px;font-weight:700}
 p.sub{color:var(--muted);margin:0 2px 10px;font-size:14px}
@@ -98,14 +99,14 @@ input.in,select.in{width:100%;padding:12px;border-radius:var(--r-sm);border:1px 
 .empty{color:var(--muted);text-align:center;padding:30px 10px;font-size:14px;line-height:1.8}
 /* nav */
 #nav{position:fixed;inset-inline:0;bottom:0;z-index:30;display:flex;justify-content:space-around;
-  background:var(--surface);border-top:1px solid var(--line);padding:8px 4px calc(8px + env(safe-area-inset-bottom))}
+  background:var(--surface);border-top:1px solid var(--line);padding:8px 4px calc(8px + var(--inset-bottom))}
 #nav button{background:none;border:0;color:var(--faint);display:flex;flex-direction:column;align-items:center;gap:3px;
   font-size:11px;cursor:pointer;flex:1;padding:4px}
 #nav button svg{width:23px;height:23px;stroke:currentColor;fill:none;stroke-width:1.7}
 #nav button.sel{color:var(--mint)}
 /* sheet (modal) */
 .sheet{position:fixed;inset:0;z-index:40;background:rgba(0,0,0,.5);display:flex;align-items:flex-end;justify-content:center}
-.sheet-body{background:var(--surface);width:100%;max-width:620px;border-radius:20px 20px 0 0;padding:18px var(--gut) calc(22px + env(safe-area-inset-bottom));
+.sheet-body{background:var(--surface);width:100%;max-width:620px;border-radius:20px 20px 0 0;padding:18px var(--gut) calc(22px + var(--inset-bottom));
   border:1px solid var(--line);max-height:86vh;overflow:auto}
 .sheet h3{margin:4px 0 10px;font-size:18px}
 /* toast */

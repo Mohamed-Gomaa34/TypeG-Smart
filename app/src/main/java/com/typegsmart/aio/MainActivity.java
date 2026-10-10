@@ -23,7 +23,19 @@ import androidx.webkit.WebViewAssetLoader.AssetsPathHandler;
 /** WebView + جسر Type-G. الواجهة محلية من assets على https://typegsmart.local/. */
 public class MainActivity extends AppCompatActivity {
     private WebView web;
+    private int insetTop, insetBottom, insetLeft, insetRight;
     private static MainActivity current;
+
+    /** حقن حواف النظام كمتغيرات CSS في :root. */
+    private void applyInsets() {
+        if (web == null) return;
+        String js = "var r=document.documentElement.style;"
+            + "r.setProperty('--inset-top','" + insetTop + "px');"
+            + "r.setProperty('--inset-bottom','" + insetBottom + "px');"
+            + "r.setProperty('--inset-left','" + insetLeft + "px');"
+            + "r.setProperty('--inset-right','" + insetRight + "px');";
+        web.evaluateJavascript(js, null);
+    }
 
     /** دفع نتيجة/تقدّم للواجهة (من خيوط الخلفية). */
     public static void pushJs(final String js) {
@@ -69,15 +81,19 @@ public class MainActivity extends AppCompatActivity {
             @Override public WebResourceResponse shouldInterceptRequest(WebView v, WebResourceRequest req) {
                 return loader.shouldInterceptRequest(req.getUrl());
             }
+            @Override public void onPageFinished(WebView v, String url) { applyInsets(); }  // بعد تحميل الصفحة
         });
 
         web.setBackgroundColor(0xFF0A1019);   // لون الخلفية في منطقة شرائط النظام
-        // احترام حواف النظام (شريط الحالة فوق + التنقل تحت + النتش) — أندرويد 15 edge-to-edge
+        // edge-to-edge: نحقن حواف النظام كمتغيرات CSS بدل padding على الـ WebView (أضمن مع العناصر الثابتة)
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
         ViewCompat.setOnApplyWindowInsetsListener(web, (v, insets) -> {
             Insets bars = insets.getInsets(
                 WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout());
-            v.setPadding(bars.left, bars.top, bars.right, bars.bottom);
+            float d = getResources().getDisplayMetrics().density;
+            insetTop = Math.round(bars.top / d);  insetBottom = Math.round(bars.bottom / d);
+            insetLeft = Math.round(bars.left / d); insetRight = Math.round(bars.right / d);
+            applyInsets();
             return insets;
         });
 
